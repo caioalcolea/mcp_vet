@@ -87,7 +87,7 @@ export class VetCareApiService {
       headers: {
         'Content-Type': 'application/json',
       },
-      timeout: 30000,
+      timeout: 120000, // 2 minutes for large datasets
     });
 
     logger.info(`VetCare API configurada: ${this.config.apiUrl}`);
@@ -206,25 +206,33 @@ export class VetCareApiService {
   async syncPets(): Promise<{ synced: number; errors: number }> {
     logger.info('Iniciando sincronização de pets do VetCare');
 
+    let synced = 0;
+    let errors = 0;
+    let currentPage = 1;
+    let lastPage = 1;
+
     try {
-      logger.info(`GET ${this.config.apiUrl}/pets`);
-      const response = await this.client.get<any>('/pets');
+      // A API usa paginação - precisamos buscar todas as páginas
+      do {
+        logger.info(`GET ${this.config.apiUrl}/pets?page=${currentPage}`);
+        const response = await this.client.get<any>('/pets', {
+          params: { page: currentPage }
+        });
 
-      // A API retorna { data: [...] } não um array direto
-      const petsData = response.data.data || response.data;
+        // A API retorna { data: [...], current_page, last_page, total, per_page }
+        const petsData = response.data.data || response.data;
+        lastPage = response.data.last_page || 1;
+        const total = response.data.total || (Array.isArray(petsData) ? petsData.length : 0);
 
-      if (!Array.isArray(petsData)) {
-        logger.error('Resposta da API não é um array:', typeof petsData);
-        logger.error('Estrutura recebida:', JSON.stringify(response.data).substring(0, 500));
-        return { synced: 0, errors: 1 };
-      }
+        if (!Array.isArray(petsData)) {
+          logger.error('Resposta da API não é um array:', typeof petsData);
+          logger.error('Estrutura recebida:', JSON.stringify(response.data).substring(0, 500));
+          return { synced, errors: errors + 1 };
+        }
 
-      logger.info(`API retornou ${petsData.length} pets`);
+        logger.info(`Página ${currentPage}/${lastPage}: ${petsData.length} pets (total: ${total})`);
 
-      let synced = 0;
-      let errors = 0;
-
-      for (const petData of petsData) {
+        for (const petData of petsData) {
         try {
           // A API já retorna a estrutura correta com cliente_id
           const pet = petData as VetCarePet;
@@ -287,7 +295,7 @@ export class VetCareApiService {
 
           // Log a cada 100 pets para acompanhar progresso
           if (synced % 100 === 0) {
-            logger.info(`Progresso: ${synced}/${petsData.length} pets sincronizados`);
+            logger.info(`Progresso global: ${synced} pets sincronizados`);
           }
         } catch (error: any) {
           logger.error(`Erro ao sincronizar pet ${petData.id || 'unknown'}:`, error.message);
@@ -295,11 +303,14 @@ export class VetCareApiService {
         }
       }
 
+        currentPage++;
+      } while (currentPage <= lastPage);
+
       logger.info(`Sincronização de pets concluída: ${synced} sincronizados, ${errors} erros`);
       return { synced, errors };
     } catch (error: any) {
       this.logRequestError(error, '/pets');
-      return { synced: 0, errors: 1 };
+      return { synced: synced, errors: errors + 1 };
     }
   }
 
@@ -320,6 +331,12 @@ export class VetCareApiService {
 
       for (const vaccine of vaccines) {
         try {
+          // Pular vacinas sem nome (não podemos registrar vacinas sem identificação)
+          if (!vaccine.vacina_nome || vaccine.vacina_nome === null || vaccine.vacina_nome.trim() === '') {
+            logger.warn(`Pet ${petId}: vacina sem nome - pulando`);
+            continue;
+          }
+
           // Determinar se é vacina anual baseado no nome ou intervalo
           const isAnnual = vaccine.vacina_nome?.toLowerCase().includes('anual') ||
                           vaccine.vacina_nome?.toLowerCase().includes('raiva') ||
