@@ -15,6 +15,9 @@ COPY src ./src
 # Build da aplicação
 RUN npm run build
 
+# Copiar arquivos estáticos para dist
+RUN cp -r src/public dist/public
+
 # Limpar devDependencies após build
 RUN npm prune --production
 

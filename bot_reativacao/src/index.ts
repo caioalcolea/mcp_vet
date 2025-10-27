@@ -3,6 +3,7 @@ import { config } from './config';
 import { database } from './config/database';
 import { scheduler } from './services/scheduler';
 import { logger } from './utils/logger';
+import dashboardRoutes from './routes/dashboard';
 import fs from 'fs';
 import path from 'path';
 
@@ -11,6 +12,9 @@ const app = express();
 // Middleware
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+// Servir arquivos estáticos da pasta public
+app.use('/public', express.static(path.join(__dirname, 'public')));
 
 // Criar diretório de logs se não existir
 const logsDir = path.join(__dirname, '..', 'logs');
@@ -59,15 +63,24 @@ app.post('/jobs/:jobName/run', async (req: Request, res: Response) => {
   }
 });
 
+// Dashboard HTML
+app.get('/dashboard', (req: Request, res: Response) => {
+  res.sendFile(path.join(__dirname, 'public', 'dashboard.html'));
+});
+
+// Rotas da API do dashboard
+app.use('/api/dashboard', dashboardRoutes);
+
 // Endpoint de informações
 app.get('/', (req: Request, res: Response) => {
   res.status(200).json({
     name: 'Bot Reativação Veterinária',
-    version: '1.0.0',
+    version: '2.0.0',
     description: 'Sistema de reativação automática de clientes para veterinária',
     endpoints: {
       health: '/health',
       status: '/status',
+      dashboard: '/dashboard',
       runJob: '/jobs/:jobName/run',
     },
     availableJobs: [
