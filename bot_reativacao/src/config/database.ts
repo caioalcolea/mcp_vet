@@ -1,35 +1,41 @@
-import mysql from 'mysql2/promise';
+import { Pool, PoolConfig } from 'pg';
 import { config } from './index';
 import { logger } from '../utils/logger';
 
 class Database {
-  private pool: mysql.Pool | null = null;
+  private pool: Pool | null = null;
 
   async connect(): Promise<void> {
     try {
-      this.pool = mysql.createPool({
+      const poolConfig: PoolConfig = {
         host: config.database.host,
         port: config.database.port,
         user: config.database.user,
         password: config.database.password,
         database: config.database.name,
-        waitForConnections: true,
-        connectionLimit: 10,
-        queueLimit: 0,
-        enableKeepAlive: true,
-        keepAliveInitialDelay: 0,
-      });
+        max: 10, // Máximo de conexões no pool
+        idleTimeoutMillis: 30000,
+        connectionTimeoutMillis: 2000,
+      };
+
+      this.pool = new Pool(poolConfig);
 
       // Testar conexão
-      await this.pool.getConnection();
-      logger.info('Conectado ao banco de dados MySQL');
+      const client = await this.pool.connect();
+      logger.info('Conectado ao banco de dados PostgreSQL');
+      client.release();
+
+      // Event handlers
+      this.pool.on('error', (err) => {
+        logger.error('Erro inesperado no pool de conexões PostgreSQL:', err);
+      });
     } catch (error) {
       logger.error('Erro ao conectar ao banco de dados:', error);
       throw error;
     }
   }
 
-  getPool(): mysql.Pool {
+  getPool(): Pool {
     if (!this.pool) {
       throw new Error('Pool de conexões não inicializado');
     }
@@ -42,8 +48,8 @@ class Database {
     }
 
     try {
-      const [rows] = await this.pool.execute(sql, params);
-      return rows as T[];
+      const result = await this.pool.query(sql, params);
+      return result.rows as T[];
     } catch (error) {
       logger.error('Erro ao executar query:', { sql, error });
       throw error;
