@@ -50,8 +50,16 @@ class Database {
     try {
       const result = await this.pool.query(sql, params);
       return result.rows as T[];
-    } catch (error) {
-      logger.error('Erro ao executar query:', { sql, error });
+    } catch (error: any) {
+      // Extract relevant error properties for better logging
+      const errorInfo = {
+        message: error.message || String(error),
+        code: error.code,
+        detail: error.detail,
+        constraint: error.constraint,
+        table: error.table,
+      };
+      logger.error('Erro ao executar query:', { sql, error: errorInfo });
       throw error;
     }
   }
