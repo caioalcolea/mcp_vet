@@ -10,7 +10,7 @@ class WhatsAppService {
     this.client = axios.create({
       baseURL: config.whatsapp.apiUrl,
       headers: {
-        'Authorization': `Bearer ${config.whatsapp.apiToken}`,
+        'apikey': config.whatsapp.apiToken,
         'Content-Type': 'application/json',
       },
       timeout: 30000,
@@ -18,7 +18,7 @@ class WhatsAppService {
   }
 
   /**
-   * Envia mensagem de texto via WhatsApp
+   * Envia mensagem de texto via WhatsApp (Evolution API)
    */
   async sendMessage(phone: string, message: string): Promise<boolean> {
     try {
@@ -26,16 +26,19 @@ class WhatsAppService {
       const cleanPhone = this.cleanPhoneNumber(phone);
 
       const payload = {
-        instanceId: config.whatsapp.instanceId,
         number: cleanPhone,
-        message: message,
+        text: message,
       };
 
       logger.info('Enviando mensagem WhatsApp', { phone: cleanPhone });
 
-      const response = await this.client.post('/message/send-text', payload);
+      // Evolution API format: /message/sendText/{instance}
+      const response = await this.client.post(
+        `/message/sendText/${config.whatsapp.instanceId}`,
+        payload
+      );
 
-      if (response.data.success || response.status === 200) {
+      if (response.data.success || response.status === 200 || response.status === 201) {
         logger.info('Mensagem enviada com sucesso', { phone: cleanPhone });
         return true;
       } else {
@@ -56,24 +59,34 @@ class WhatsAppService {
   }
 
   /**
-   * Envia mensagem com mídia (imagem, vídeo, etc)
+   * Envia mensagem com mídia (imagem, vídeo, etc) - Evolution API
    */
-  async sendMediaMessage(phone: string, message: string, mediaUrl: string): Promise<boolean> {
+  async sendMediaMessage(
+    phone: string,
+    caption: string,
+    mediaUrl: string,
+    mediaType: 'image' | 'video' | 'document' = 'image'
+  ): Promise<boolean> {
     try {
       const cleanPhone = this.cleanPhoneNumber(phone);
 
       const payload = {
-        instanceId: config.whatsapp.instanceId,
         number: cleanPhone,
-        message: message,
-        mediaUrl: mediaUrl,
+        mediatype: mediaType,
+        mimetype: mediaType === 'image' ? 'image/jpeg' : 'application/pdf',
+        caption: caption,
+        media: mediaUrl,
       };
 
-      logger.info('Enviando mensagem com mídia via WhatsApp', { phone: cleanPhone });
+      logger.info('Enviando mensagem com mídia via WhatsApp', { phone: cleanPhone, mediaType });
 
-      const response = await this.client.post('/message/send-media', payload);
+      // Evolution API format: /message/sendMedia/{instance}
+      const response = await this.client.post(
+        `/message/sendMedia/${config.whatsapp.instanceId}`,
+        payload
+      );
 
-      if (response.data.success || response.status === 200) {
+      if (response.data.success || response.status === 200 || response.status === 201) {
         logger.info('Mensagem com mídia enviada com sucesso', { phone: cleanPhone });
         return true;
       } else {
