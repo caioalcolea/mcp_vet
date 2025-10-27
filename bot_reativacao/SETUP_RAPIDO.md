@@ -3,12 +3,14 @@
 ## ✅ Suas credenciais PostgreSQL Supabase:
 
 ```env
-DB_HOST=db                          # Nome do serviço no Swarm
-DB_PORT=5344                        # Porta customizada (não é 5432!)
+DB_HOST=tasks.postgres_postgres     # Nome do serviço Swarm
+DB_PORT=5432                        # Porta padrão PostgreSQL
 DB_USER=supabase_admin
 DB_PASSWORD=16bc41eb37268783dd01221d9a147372
 DB_NAME=bot_reativacao_vet          # Novo database que vamos criar
 ```
+
+**Container identificado**: `postgres_postgres.1.byodefogahamy9w9gwfvvsxdg`
 
 ## 🚀 Passo a Passo
 
@@ -83,8 +85,9 @@ PORT=2080
 NODE_ENV=production
 
 # Banco de Dados PostgreSQL (Supabase)
-DB_HOST=db
-DB_PORT=5344
+# Use tasks.postgres_postgres para resolver via Swarm DNS
+DB_HOST=tasks.postgres_postgres
+DB_PORT=5432
 DB_USER=supabase_admin
 DB_PASSWORD=16bc41eb37268783dd01221d9a147372
 DB_NAME=bot_reativacao_vet
@@ -149,21 +152,25 @@ curl https://automacaobs.talkhub.me/health
 
 ## 🔧 Troubleshooting
 
-### Se DB_HOST=db não funcionar
+### Se DB_HOST=tasks.postgres_postgres não funcionar
 
-Você pode precisar usar o nome completo do serviço no Swarm ou o IP.
+Você pode tentar outras opções de resolução de DNS no Swarm:
 
 ```bash
-# Opção 1: Ver nome do serviço
+# Opção 1: Ver nome exato do serviço Swarm
 docker service ls | grep postgres
+# Use: DB_HOST=postgres_postgres
 
 # Opção 2: Ver IP do container
-docker inspect $(docker ps -qf "name=postgres") | grep IPAddress
+docker inspect $(docker ps -qf "name=postgres_postgres") | grep IPAddress
+# Use: DB_HOST=10.0.x.x  (IP encontrado)
 
-# Usar no .env:
-# DB_HOST=10.0.x.x  (IP encontrado)
-# OU
-# DB_HOST=nome_do_servico_postgres
+# Opção 3: Usar nome do container diretamente
+docker ps | grep postgres | awk '{print $NF}'
+# Use: DB_HOST=postgres_postgres.1.byodefogahamy9w9gwfvvsxdg
+
+# Opção 4: Adicionar ambos os serviços na mesma rede
+# Isso pode ser necessário se os serviços estiverem em redes diferentes
 ```
 
 ### Testar conexão manualmente

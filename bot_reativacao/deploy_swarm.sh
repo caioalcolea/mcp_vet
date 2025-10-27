@@ -44,13 +44,13 @@ fi
 
 echo -e "${GREEN}✅ Docker Swarm ativo${NC}"
 
-# Verificar se a rede traefik-public existe
-if ! docker network inspect traefik-public &> /dev/null; then
-    echo -e "${YELLOW}⚠️  Rede traefik-public não encontrada. Criando...${NC}"
-    docker network create --driver=overlay traefik-public
-    echo -e "${GREEN}✅ Rede traefik-public criada${NC}"
+# Verificar se a rede talkhub existe
+if ! docker network inspect talkhub &> /dev/null; then
+    echo -e "${YELLOW}⚠️  Rede talkhub não encontrada. Criando...${NC}"
+    docker network create --driver=overlay talkhub
+    echo -e "${GREEN}✅ Rede talkhub criada${NC}"
 else
-    echo -e "${GREEN}✅ Rede traefik-public existe${NC}"
+    echo -e "${GREEN}✅ Rede talkhub existe${NC}"
 fi
 
 echo ""
