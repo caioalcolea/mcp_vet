@@ -45,11 +45,12 @@ export const config = {
     },
   },
   cron: {
-    vaccines: process.env.CRON_VACCINES || '0 9 * * *',        // 09:00 todos os dias
-    financial: process.env.CRON_FINANCIAL || '0 10 * * *',     // 10:00 todos os dias
-    grooming: process.env.CRON_GROOMING || '0 11 * * *',       // 11:00 todos os dias
-    appointments: process.env.CRON_APPOINTMENTS || '0 8 * * *', // 08:00 todos os dias
-    satisfaction: process.env.CRON_SATISFACTION || '0 * * * *', // A cada hora
+    vetcareSync: process.env.CRON_VETCARE_SYNC || '0 */6 * * *', // A cada 6 horas
+    vaccines: process.env.CRON_VACCINES || '0 9 * * *',          // 09:00 todos os dias
+    financial: process.env.CRON_FINANCIAL || '0 10 * * *',       // 10:00 todos os dias
+    grooming: process.env.CRON_GROOMING || '0 11 * * *',         // 11:00 todos os dias
+    appointments: process.env.CRON_APPOINTMENTS || '0 8 * * *',   // 08:00 todos os dias
+    satisfaction: process.env.CRON_SATISFACTION || '0 * * * *',   // A cada hora
   },
   logging: {
     level: process.env.LOG_LEVEL || 'info',

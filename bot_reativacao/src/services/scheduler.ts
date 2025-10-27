@@ -6,6 +6,7 @@ import { financialReactivation } from '../modules/financial/financialReactivatio
 import { groomingReactivation } from '../modules/grooming/groomingReactivation';
 import { appointmentConfirmation } from '../modules/appointments/appointmentConfirmation';
 import { satisfactionSurvey } from '../modules/satisfaction/satisfactionSurvey';
+import { vetcareApiService } from './vetcareApiService';
 
 export class Scheduler {
   private jobs: Map<string, cron.ScheduledTask> = new Map();
@@ -15,6 +16,9 @@ export class Scheduler {
    */
   start(): void {
     logger.info('Iniciando scheduler de reativações');
+
+    // Agendar sincronização do VetCare
+    this.scheduleVetCareSync();
 
     // Agendar reativação de vacinas
     this.scheduleVaccineReactivation();
@@ -32,6 +36,25 @@ export class Scheduler {
     this.scheduleSatisfactionSurvey();
 
     logger.info('Scheduler iniciado com sucesso');
+  }
+
+  /**
+   * Agenda sincronização do VetCare
+   */
+  private scheduleVetCareSync(): void {
+    const cronExpression = config.cron.vetcareSync;
+
+    const job = cron.schedule(cronExpression, async () => {
+      logger.info('Executando job de sincronização do VetCare');
+      try {
+        await vetcareApiService.syncAll();
+      } catch (error) {
+        logger.error('Erro ao executar job de sincronização do VetCare:', error);
+      }
+    });
+
+    this.jobs.set('vetcare_sync', job);
+    logger.info(`Job de sincronização do VetCare agendado: ${cronExpression}`);
   }
 
   /**
@@ -152,6 +175,9 @@ export class Scheduler {
 
     try {
       switch (jobName) {
+        case 'vetcare_sync':
+          await vetcareApiService.syncAll();
+          break;
         case 'vaccines':
           await vaccineReactivation.processVaccineReactivations();
           break;

@@ -111,7 +111,10 @@
         <!-- Ações Rápidas -->
         <div class="bg-white rounded-lg shadow-md p-6 mb-8">
             <h3 class="text-xl font-bold mb-4 text-gray-800">⚡ Executar Jobs Manualmente</h3>
-            <div class="grid grid-cols-2 md:grid-cols-5 gap-4">
+            <div class="grid grid-cols-2 md:grid-cols-3 gap-4">
+                <button onclick="runJob('vetcare_sync')" class="bg-indigo-500 hover:bg-indigo-600 text-white font-semibold py-3 px-4 rounded-lg transition">
+                    <i class="fas fa-sync-alt mr-2"></i> Sync VetCare
+                </button>
                 <button onclick="runJob('vaccines')" class="bg-blue-500 hover:bg-blue-600 text-white font-semibold py-3 px-4 rounded-lg transition">
                     <i class="fas fa-syringe mr-2"></i> Vacinas
                 </button>
