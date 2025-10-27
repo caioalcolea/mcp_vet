@@ -85,14 +85,46 @@ export class VetCareApiService {
   }
 
   /**
+   * Trata erros de requisição HTTP de forma padronizada
+   */
+  private logRequestError(error: any, endpoint: string): void {
+    if (error.response) {
+      // A API respondeu com status code fora do range 2xx
+      logger.error(`Erro HTTP ${error.response.status} ao acessar ${endpoint}:`, {
+        status: error.response.status,
+        statusText: error.response.statusText,
+        data: typeof error.response.data === 'string' ? error.response.data.substring(0, 200) : error.response.data
+      });
+    } else if (error.request) {
+      // Requisição foi feita mas não houve resposta
+      logger.error(`Sem resposta da API ao acessar ${endpoint}:`, {
+        message: error.message,
+        code: error.code,
+        url: `${this.config.apiUrl}${endpoint}`
+      });
+    } else {
+      // Erro ao configurar a requisição
+      logger.error(`Erro ao configurar requisição para ${endpoint}:`, error.message);
+    }
+  }
+
+  /**
    * Sincroniza todos os clientes do VetCare para o banco local
    */
   async syncCustomers(): Promise<{ synced: number; errors: number }> {
     logger.info('Iniciando sincronização de clientes do VetCare');
 
     try {
+      logger.info(`Fazendo requisição para: ${this.config.apiUrl}/clientes`);
       const response = await this.client.get<VetCareCustomer[]>('/clientes');
       const customers = response.data;
+
+      if (!Array.isArray(customers)) {
+        logger.error('Resposta da API não é um array:', typeof customers);
+        return { synced: 0, errors: 1 };
+      }
+
+      logger.info(`API retornou ${customers.length} clientes`);
 
       let synced = 0;
       let errors = 0;
@@ -152,7 +184,7 @@ export class VetCareApiService {
       logger.info(`Sincronização de clientes concluída: ${synced} sincronizados, ${errors} erros`);
       return { synced, errors };
     } catch (error: any) {
-      logger.error('Erro ao buscar clientes do VetCare:', error);
+      this.logRequestError(error, '/clientes');
       return { synced: 0, errors: 1 };
     }
   }
@@ -229,7 +261,7 @@ export class VetCareApiService {
       logger.info(`Sincronização de pets concluída: ${synced} sincronizados, ${errors} erros`);
       return { synced, errors };
     } catch (error: any) {
-      logger.error('Erro ao buscar pets do VetCare:', error);
+      this.logRequestError(error, '/pets');
       return { synced: 0, errors: 1 };
     }
   }
@@ -306,7 +338,7 @@ export class VetCareApiService {
 
       return { synced, errors };
     } catch (error: any) {
-      logger.error(`Erro ao buscar vacinas do pet ${petId}:`, error);
+      this.logRequestError(error, `/pets/${petId}/vacinacoes`);
       return { synced: 0, errors: 1 };
     }
   }
@@ -421,7 +453,7 @@ export class VetCareApiService {
       logger.info(`Sincronização de agendamentos concluída: ${synced} sincronizados, ${errors} erros`);
       return { synced, errors };
     } catch (error: any) {
-      logger.error('Erro ao buscar agendamentos do VetCare:', error);
+      this.logRequestError(error, '/agendamentos');
       return { synced: 0, errors: 1 };
     }
   }
@@ -493,7 +525,7 @@ export class VetCareApiService {
       logger.info(`Sincronização de contas a receber concluída: ${synced} sincronizadas, ${errors} erros`);
       return { synced, errors };
     } catch (error: any) {
-      logger.error('Erro ao buscar contas a receber do VetCare:', error);
+      this.logRequestError(error, '/contas-receber');
       return { synced: 0, errors: 1 };
     }
   }
