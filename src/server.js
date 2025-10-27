@@ -4318,45 +4318,52 @@ app.use((err, req, res, next) => {
 
 async function startServer() {
   try {
-    console.log('Iniciando VetCare MCP Server v4.0.0...');
-    
+    console.log('Iniciando VetCare MCP Server v4.2.0...');
+
     // Validar ferramentas
     if (Object.keys(toolFunctions).length !== toolDefinitions.length) {
       console.error('❌ Inconsistência entre ferramentas definidas e implementadas!');
       throw new Error('Tool function mapping mismatch');
     }
     console.log(`✓ ${toolDefinitions.length} ferramentas validadas`);
-    
-    // Testar conexão com API
-    const healthCheck = await apiRequest('/health');
-    if (healthCheck.success) {
-      console.log('✓ Conexão com API VetCare verificada');
-      const stats = healthCheck.data?.stats;
-      if (stats) {
-        console.log(`📊 Estatísticas: ${stats.clientes || 0} clientes, ${stats.pets || 0} pets`);
+
+    // Testar conexão com API (não bloquear se falhar)
+    try {
+      const healthCheck = await apiRequest('/health');
+      if (healthCheck.success) {
+        console.log('✓ Conexão com API VetCare verificada');
+        const stats = healthCheck.data?.stats;
+        if (stats) {
+          console.log(`📊 Estatísticas: ${stats.clientes || 0} clientes, ${stats.pets || 0} pets`);
+        }
       }
-    } else {
-      console.warn('⚠ Não foi possível verificar conexão com API VetCare');
+    } catch (healthError) {
+      console.warn('⚠ API VetCare não acessível (servidor continuará funcionando)');
+      console.warn(`   Motivo: ${healthError.message}`);
     }
-    
+
     app.listen(CONFIG.PORT, CONFIG.HOST, () => {
       console.log('');
-      console.log('🚀 VetCare MCP Server v4.0.0 - PRODUÇÃO OTIMIZADA');
+      console.log('🚀 VetCare MCP Server v4.2.0 - OTIMIZAÇÃO PARA CHATBOT');
       console.log(`🔟 Servidor local: http://${CONFIG.HOST}:${CONFIG.PORT}`);
       console.log(`🌐 Domínio: https://${CONFIG.DOMAIN}`);
       console.log(`🔗 API VetCare: ${CONFIG.VETCARE_API_URL}`);
       console.log('');
-      console.log('✨ Recursos v4.0:');
-      console.log('   ✅ 45+ ferramentas de gestão veterinária');
+      console.log('✨ Recursos v4.2:');
+      console.log('   ✅ 50 ferramentas de gestão veterinária');
+      console.log('   🆕 Consulta de horários disponíveis (lista ANTES de agendar)');
+      console.log('   🆕 Planos personalizados por raça dos pets');
+      console.log('   🆕 Formatação compacta para chatbot (2000 chars)');
+      console.log('   🆕 Sugestão inteligente de profissionais');
       console.log('   ✅ Sistema financeiro completo');
       console.log('   ✅ Dashboard com insights e KPIs');
       console.log('   ✅ Gestão de estoque e produtos');
       console.log('   ✅ Controle de caixa e vendas');
       console.log('   ✅ Comissões e relatórios');
-      console.log('   🆕 Histórico clínico completo (vacinas, peso, exames)');
-      console.log('   🆕 Verificação inteligente de vacinas atrasadas');
-      console.log('   🆕 Workflow de agendamento com validação automática');
-      console.log('   🆕 Validação OBRIGATÓRIA em buscas (proteção anti-overload)');
+      console.log('   ✅ Histórico clínico completo');
+      console.log('   ✅ Verificação inteligente de vacinas atrasadas');
+      console.log('   ✅ Workflow de agendamento com validação automática');
+      console.log('   ✅ Validação OBRIGATÓRIA em buscas (proteção anti-overload)');
       console.log('   ✅ Cache inteligente multi-nível');
       console.log('   ✅ Rate limiting adaptativo');
       console.log('   ✅ Suporte completo MCP 2024-11-05');
@@ -4368,7 +4375,7 @@ async function startServer() {
       console.log('Sistema pronto para produção! 🎯');
       console.log('');
     });
-    
+
   } catch (error) {
     console.error('[FATAL] Falha ao iniciar servidor:', error);
     process.exit(1);
