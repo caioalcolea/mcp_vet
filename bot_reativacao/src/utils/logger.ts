@@ -1,6 +1,26 @@
 import winston from 'winston';
 import { config } from '../config';
 
+// Função para serializar objetos com referências circulares de forma segura
+const safeStringify = (obj: any): string => {
+  const seen = new WeakSet();
+  return JSON.stringify(obj, (key, value) => {
+    // Ignorar propriedades específicas do axios que causam problemas
+    if (key === 'request' || key === 'config' || key === 'socket' || key === 'parser') {
+      return '[Circular]';
+    }
+
+    if (typeof value === 'object' && value !== null) {
+      if (seen.has(value)) {
+        return '[Circular]';
+      }
+      seen.add(value);
+    }
+
+    return value;
+  });
+};
+
 const logFormat = winston.format.combine(
   winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
   winston.format.errors({ stack: true }),
@@ -14,7 +34,11 @@ const consoleFormat = winston.format.combine(
   winston.format.printf(({ timestamp, level, message, ...meta }) => {
     let msg = `${timestamp} [${level}]: ${message}`;
     if (Object.keys(meta).length > 0) {
-      msg += ` ${JSON.stringify(meta)}`;
+      try {
+        msg += ` ${safeStringify(meta)}`;
+      } catch (error) {
+        msg += ` [Error serializing metadata]`;
+      }
     }
     return msg;
   })
