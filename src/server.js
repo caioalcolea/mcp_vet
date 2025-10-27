@@ -2,12 +2,16 @@
 
 /**
  * VetCare MCP Server - Sistema de Gestão Veterinária
- * Versão 4.1.0 - PRODUÇÃO OTIMIZADA
+ * Versão 4.2.0 - OTIMIZAÇÃO PARA CHATBOT
  *
- * ✨ RECURSOS v4.1:
- *  - 46 ferramentas completas de gestão veterinária
- *  - NOVO: Sugestão inteligente de profissionais (Thais/Gustavo/Banho e Tosa)
- *  - NOVO: Integração automática de profissionais no workflow de agendamento
+ * ✨ NOVIDADES v4.2:
+ *  - 50 ferramentas completas de gestão veterinária
+ *  - NOVO: Consulta de horários disponíveis (lista opções ANTES de agendar)
+ *  - NOVO: Planos personalizados por raça dos pets do cliente
+ *  - NOVO: Formatação compacta de respostas (limite 2000 chars para chatbot)
+ *  - NOVO: Sistema inteligente que sugere horários ao invés de agendar direto
+ *  - Sugestão inteligente de profissionais (Thais/Gustavo/Banho e Tosa)
+ *  - Integração automática de profissionais no workflow de agendamento
  *  - Histórico clínico completo (vacinas, peso, exames, consultas)
  *  - Verificação inteligente de vacinas atrasadas
  *  - Workflow de agendamento com validação automática
@@ -27,6 +31,11 @@
  *  - Nunca retorna listas completas (5000+ clientes protegidos)
  *  - Busca obrigatória com mínimo 3 caracteres
  *  - Limite de 50 resultados por busca
+ *
+ * 🤖 OTIMIZAÇÃO CHATBOT:
+ *  - Respostas formatadas para limite de 2000 caracteres
+ *  - Planos personalizados baseados em raças cadastradas
+ *  - Listagem de horários antes de confirmar agendamento
  */
 
 import express from 'express';
@@ -79,10 +88,11 @@ const CONFIG = {
   }
 };
 
-console.log('🚀 VetCare MCP Server v4.1.0 - Produção Otimizada');
-console.log('====================================================');
-console.log('📊 46 ferramentas disponíveis');
+console.log('🚀 VetCare MCP Server v4.2.0 - Otimização para Chatbot');
+console.log('========================================================');
+console.log('📊 50 ferramentas disponíveis');
 console.log('🔒 Proteção anti-overload ativa (buscas obrigatórias)');
+console.log('🤖 Respostas otimizadas para limite de 2000 caracteres');
 console.log('✅ 100% integrado com API real: https://vet.talkhub.me/api');
 
 // ==================== SISTEMA DE LOGGING ====================
@@ -1157,6 +1167,332 @@ async function listarProximosAgendamentos({ cliente_id, limite }) {
   }
 }
 
+async function listarHorariosDisponiveisProfissional({
+  veterinario_id,
+  data,
+  duracao_minutos = 30,
+  limite = 10
+}) {
+  log('TOOL', 'listar_horarios_disponiveis_profissional', { veterinario_id, data });
+  try {
+    if (!veterinario_id) throw new Error('veterinario_id é obrigatório');
+    if (!data) throw new Error('data é obrigatória (formato YYYY-MM-DD)');
+
+    /**
+     * LÓGICA DE HORÁRIOS DISPONÍVEIS:
+     *
+     * 1. Busca todos os agendamentos do veterinário na data especificada
+     * 2. Define horário de funcionamento: 08:00 - 18:00
+     * 3. Gera slots de tempo baseado na duração (padrão 30min)
+     * 4. Remove slots conflitantes com agendamentos existentes
+     * 5. Retorna lista compacta de horários livres
+     */
+
+    const dataFormatada = Validators.data(data);
+    const endpoint = `/agendamentos?veterinario_id=${veterinario_id}&data=${dataFormatada}`;
+
+    const result = await apiRequest(endpoint);
+
+    if (!result.success) {
+      return { success: false, horarios: [], error: result.error };
+    }
+
+    const agendamentos = Array.isArray(result.data) ? result.data : [];
+
+    // Definir horários de funcionamento
+    const INICIO_EXPEDIENTE = 8; // 08:00
+    const FIM_EXPEDIENTE = 18;   // 18:00
+    const INTERVALO_ALMOCO_INICIO = 12; // 12:00
+    const INTERVALO_ALMOCO_FIM = 13;    // 13:00
+
+    // Gerar todos os slots possíveis
+    const slotsDisponiveis = [];
+    const duracaoHoras = duracao_minutos / 60;
+
+    for (let hora = INICIO_EXPEDIENTE; hora < FIM_EXPEDIENTE; hora += duracaoHoras) {
+      // Pular intervalo de almoço
+      if (hora >= INTERVALO_ALMOCO_INICIO && hora < INTERVALO_ALMOCO_FIM) {
+        continue;
+      }
+
+      const horarioFormatado = `${String(Math.floor(hora)).padStart(2, '0')}:${String((hora % 1) * 60).padStart(2, '0')}`;
+      const dataHoraSlot = `${dataFormatada} ${horarioFormatado}:00`;
+
+      // Verificar se há conflito com algum agendamento
+      const temConflito = agendamentos.some(agend => {
+        const agendInicio = new Date(agend.data_hora);
+        const agendFim = new Date(agendInicio.getTime() + (agend.duracao_minutos || 30) * 60000);
+        const slotInicio = new Date(dataHoraSlot);
+        const slotFim = new Date(slotInicio.getTime() + duracao_minutos * 60000);
+
+        // Verifica sobreposição
+        return (slotInicio < agendFim && slotFim > agendInicio);
+      });
+
+      if (!temConflito) {
+        slotsDisponiveis.push({
+          horario: horarioFormatado,
+          data_hora_completa: dataHoraSlot,
+          disponivel: true
+        });
+      }
+
+      // Limitar resultados para não sobrecarregar
+      if (slotsDisponiveis.length >= limite) {
+        break;
+      }
+    }
+
+    return {
+      success: true,
+      veterinario_id: parseInt(veterinario_id),
+      data: dataFormatada,
+      horarios: slotsDisponiveis,
+      total: slotsDisponiveis.length,
+      duracao_minutos: parseInt(duracao_minutos),
+      mensagem: slotsDisponiveis.length > 0
+        ? `${slotsDisponiveis.length} horário(s) disponível(is)`
+        : 'Nenhum horário disponível para esta data'
+    };
+
+  } catch (error) {
+    log('TOOL', 'Erro ao listar horários disponíveis:', error.message, LogLevel.ERROR);
+    return { success: false, horarios: [], error: error.message };
+  }
+}
+
+async function buscarPlanosPersonalizados({ cliente_id }) {
+  log('TOOL', 'buscar_planos_personalizados', { cliente_id });
+  try {
+    if (!cliente_id) throw new Error('cliente_id é obrigatório');
+
+    /**
+     * LÓGICA DE PLANOS PERSONALIZADOS:
+     *
+     * 1. Busca todos os pets do cliente
+     * 2. Extrai raças dos pets
+     * 3. Busca planos disponíveis
+     * 4. Filtra planos que contenham o nome da raça na descrição
+     * 5. Retorna planos personalizados + planos genéricos
+     * 6. Formata resposta de forma compacta (< 2000 chars)
+     */
+
+    // Buscar pets do cliente
+    const petsResult = await listarPetsCliente({ cliente_id });
+
+    if (!petsResult.success || !petsResult.pets || petsResult.pets.length === 0) {
+      return {
+        success: false,
+        planos_personalizados: [],
+        planos_genericos: [],
+        mensagem: 'Cliente não possui pets cadastrados',
+        sugestao: 'Cadastre primeiro o pet para ver planos personalizados'
+      };
+    }
+
+    // Extrair raças dos pets
+    const racas = petsResult.pets
+      .filter(pet => pet.raca && pet.raca.trim() !== '')
+      .map(pet => ({
+        pet_id: pet.id,
+        pet_nome: pet.nome,
+        especie: pet.especie,
+        raca: pet.raca
+      }));
+
+    // Buscar todos os planos
+    const planosResult = await listarPlanos();
+
+    if (!planosResult.success || !planosResult.planos) {
+      return {
+        success: false,
+        planos_personalizados: [],
+        planos_genericos: [],
+        error: planosResult.error || 'Erro ao buscar planos'
+      };
+    }
+
+    const todosPlanos = planosResult.planos;
+
+    // Separar planos personalizados e genéricos
+    const planosPersonalizados = [];
+    const planosGenericos = [];
+
+    todosPlanos.forEach(plano => {
+      const descricao = (plano.descricao || plano.nome || '').toLowerCase();
+      const nomePlano = (plano.nome || '').toLowerCase();
+
+      // Verificar se o plano menciona alguma raça dos pets
+      const racaEncontrada = racas.find(r => {
+        const racaNormalizada = r.raca.toLowerCase();
+        return descricao.includes(racaNormalizada) || nomePlano.includes(racaNormalizada);
+      });
+
+      if (racaEncontrada) {
+        planosPersonalizados.push({
+          ...plano,
+          recomendado_para: {
+            pet_nome: racaEncontrada.pet_nome,
+            raca: racaEncontrada.raca,
+            especie: racaEncontrada.especie
+          }
+        });
+      } else {
+        // Planos genéricos (sem menção de raça específica)
+        const ehGenerico = !/(raça|breed|cão|gato|cachorro)/i.test(nomePlano);
+        if (ehGenerico || planosGenericos.length < 3) {
+          planosGenericos.push(plano);
+        }
+      }
+    });
+
+    return {
+      success: true,
+      pets_do_cliente: petsResult.pets.map(p => ({
+        id: p.id,
+        nome: p.nome,
+        especie: p.especie,
+        raca: p.raca
+      })),
+      planos_personalizados: planosPersonalizados,
+      planos_genericos: planosGenericos.slice(0, 5), // Limitar a 5 para não estourar limite
+      tem_planos_especificos: planosPersonalizados.length > 0,
+      mensagem: planosPersonalizados.length > 0
+        ? `✨ Encontramos ${planosPersonalizados.length} plano(s) especial(is) para a raça dos seus pets!`
+        : '💡 Temos planos genéricos disponíveis. Descontos especiais por raça - consulte!',
+      total_personalizados: planosPersonalizados.length,
+      total_genericos: planosGenericos.length
+    };
+
+  } catch (error) {
+    log('TOOL', 'Erro ao buscar planos personalizados:', error.message, LogLevel.ERROR);
+    return {
+      success: false,
+      planos_personalizados: [],
+      planos_genericos: [],
+      error: error.message
+    };
+  }
+}
+
+async function formatarRespostaCompacta({ dados, tipo, limite_caracteres = 1800 }) {
+  log('TOOL', 'formatar_resposta_compacta', { tipo });
+  try {
+    /**
+     * FORMATAÇÃO COMPACTA PARA CHATBOT (Limite: 2000 chars)
+     *
+     * Tipos suportados:
+     * - "horarios": Lista de horários disponíveis
+     * - "planos": Lista de planos
+     * - "agendamentos": Lista de agendamentos
+     * - "pets": Lista de pets
+     */
+
+    let textoFormatado = '';
+
+    switch (tipo) {
+      case 'horarios':
+        if (!dados.horarios || dados.horarios.length === 0) {
+          textoFormatado = '❌ Nenhum horário disponível nesta data.';
+        } else {
+          // Agrupar horários por período
+          const manha = dados.horarios.filter(h => parseInt(h.horario.split(':')[0]) < 12);
+          const tarde = dados.horarios.filter(h => parseInt(h.horario.split(':')[0]) >= 13);
+
+          textoFormatado = `📅 Horários disponíveis para ${dados.data}:\n\n`;
+
+          if (manha.length > 0) {
+            textoFormatado += `🌅 Manhã: ${manha.map(h => h.horario).join(', ')}\n`;
+          }
+
+          if (tarde.length > 0) {
+            textoFormatado += `🌇 Tarde: ${tarde.map(h => h.horario).join(', ')}\n`;
+          }
+
+          textoFormatado += `\n✅ Total: ${dados.total} opções`;
+        }
+        break;
+
+      case 'planos':
+        if (!dados.planos_personalizados || dados.planos_personalizados.length === 0) {
+          if (dados.planos_genericos && dados.planos_genericos.length > 0) {
+            textoFormatado = `💰 Planos disponíveis:\n\n`;
+            dados.planos_genericos.slice(0, 5).forEach(plano => {
+              textoFormatado += `• ${plano.nome}: R$ ${plano.preco || plano.valor || '?'}\n`;
+            });
+            textoFormatado += `\n💡 Temos descontos especiais por raça! Qual a raça do seu pet?`;
+          } else {
+            textoFormatado = '❌ Nenhum plano disponível no momento.';
+          }
+        } else {
+          textoFormatado = `✨ Planos especiais para seus pets:\n\n`;
+          dados.planos_personalizados.slice(0, 5).forEach(plano => {
+            textoFormatado += `🐾 ${plano.nome} (${plano.recomendado_para.raca}): R$ ${plano.preco || plano.valor || '?'}\n`;
+          });
+
+          if (dados.planos_genericos && dados.planos_genericos.length > 0) {
+            textoFormatado += `\n📋 Outros planos:\n`;
+            dados.planos_genericos.slice(0, 3).forEach(plano => {
+              textoFormatado += `• ${plano.nome}: R$ ${plano.preco || plano.valor || '?'}\n`;
+            });
+          }
+        }
+        break;
+
+      case 'agendamentos':
+        if (!dados.agendamentos || dados.agendamentos.length === 0) {
+          textoFormatado = '📅 Nenhum agendamento futuro.';
+        } else {
+          textoFormatado = `📅 Seus agendamentos:\n\n`;
+          dados.agendamentos.slice(0, 5).forEach(ag => {
+            const data = new Date(ag.data_hora);
+            const dataStr = data.toLocaleDateString('pt-BR');
+            const horaStr = data.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+            textoFormatado += `• ${dataStr} às ${horaStr} - ${ag.pet_nome || 'Pet'} (${ag.servico || 'Consulta'})\n`;
+          });
+        }
+        break;
+
+      case 'pets':
+        if (!dados.pets || dados.pets.length === 0) {
+          textoFormatado = '🐾 Nenhum pet cadastrado.';
+        } else {
+          textoFormatado = `🐾 Seus pets:\n\n`;
+          dados.pets.forEach(pet => {
+            const icone = pet.especie && pet.especie.toLowerCase().includes('gato') ? '🐱' :
+                         pet.especie && pet.especie.toLowerCase().includes('cão') ? '🐶' :
+                         pet.especie && pet.especie.toLowerCase().includes('coelho') ? '🐇' : '🐾';
+            textoFormatado += `${icone} ${pet.nome} (${pet.especie || '?'}, ${pet.raca || 'SRD'})\n`;
+          });
+        }
+        break;
+
+      default:
+        textoFormatado = JSON.stringify(dados).substring(0, limite_caracteres);
+    }
+
+    // Garantir que não ultrapasse o limite
+    if (textoFormatado.length > limite_caracteres) {
+      textoFormatado = textoFormatado.substring(0, limite_caracteres - 20) + '\n\n[... truncado]';
+    }
+
+    return {
+      success: true,
+      texto: textoFormatado,
+      caracteres: textoFormatado.length,
+      dentro_limite: textoFormatado.length <= limite_caracteres
+    };
+
+  } catch (error) {
+    log('TOOL', 'Erro ao formatar resposta compacta:', error.message, LogLevel.ERROR);
+    return {
+      success: false,
+      texto: '',
+      error: error.message
+    };
+  }
+}
+
 // ==================== FERRAMENTAS - SERVIÇOS ====================
 
 async function listarServicosAtivos() {
@@ -1874,6 +2210,109 @@ async function obterEstatisticasPet({ pet_id }) {
   } catch (error) {
     log('TOOL', 'Erro ao obter estatísticas do pet:', error.message, LogLevel.ERROR);
     return { success: false, estatisticas: {}, error: error.message };
+  }
+}
+
+async function consultarHorariosAgendamento({
+  cliente_id,
+  pet_id,
+  servico_descricao,
+  veterinario_id,
+  data,
+  duracao_minutos = 30
+}) {
+  log('TOOL', 'consultar_horarios_agendamento', { cliente_id, pet_id, data });
+  try {
+    if (!pet_id) throw new Error('pet_id é obrigatório');
+    if (!data) throw new Error('data é obrigatória (formato YYYY-MM-DD)');
+
+    const resultado = {
+      success: true,
+      etapas: {}
+    };
+
+    // Etapa 1: Buscar serviço se descrição fornecida (para saber duração)
+    if (servico_descricao) {
+      const servicoResult = await buscarServicos({ termo_busca: servico_descricao });
+      if (servicoResult.success && servicoResult.servicos.length > 0) {
+        resultado.etapas.servico = servicoResult.servicos[0];
+        duracao_minutos = servicoResult.servicos[0].duracao_minutos || 30;
+      }
+    }
+
+    // Etapa 2: Sugerir profissional automaticamente se não especificado
+    let veterinarioIdFinal = veterinario_id;
+
+    if (!veterinarioIdFinal) {
+      const tipo = resultado.etapas.servico?.tipo || servico_descricao || 'consulta';
+
+      const sugestaoResult = await sugerirProfissional({
+        tipo_servico: tipo,
+        pet_id: pet_id
+      });
+
+      if (sugestaoResult.success && sugestaoResult.veterinario_id) {
+        veterinarioIdFinal = sugestaoResult.veterinario_id;
+        resultado.etapas.sugestao_profissional = {
+          veterinario_id: sugestaoResult.veterinario_id,
+          veterinario_nome: sugestaoResult.veterinario_nome,
+          motivo: sugestaoResult.motivo,
+          regra_aplicada: sugestaoResult.regra_aplicada
+        };
+        log('TOOL', `✓ Profissional sugerido: ${sugestaoResult.veterinario_nome} (${sugestaoResult.veterinario_id})`);
+      }
+    }
+
+    // Etapa 3: Listar horários disponíveis do profissional
+    if (!veterinarioIdFinal) {
+      return {
+        success: false,
+        error: 'Não foi possível determinar profissional. Especifique veterinario_id.'
+      };
+    }
+
+    const horariosResult = await listarHorariosDisponiveisProfissional({
+      veterinario_id: veterinarioIdFinal,
+      data: data,
+      duracao_minutos: duracao_minutos,
+      limite: 15
+    });
+
+    resultado.etapas.horarios = horariosResult;
+
+    if (!horariosResult.success || horariosResult.total === 0) {
+      return {
+        success: false,
+        veterinario_id: veterinarioIdFinal,
+        veterinario_nome: resultado.etapas.sugestao_profissional?.veterinario_nome || null,
+        data: data,
+        horarios: [],
+        mensagem: 'Nenhum horário disponível para esta data. Tente outra data.'
+      };
+    }
+
+    // Formatar resposta compacta para chatbot
+    const respostaFormatada = await formatarRespostaCompacta({
+      dados: horariosResult,
+      tipo: 'horarios',
+      limite_caracteres: 1800
+    });
+
+    return {
+      success: true,
+      veterinario_id: veterinarioIdFinal,
+      veterinario_nome: resultado.etapas.sugestao_profissional?.veterinario_nome || null,
+      data: data,
+      horarios: horariosResult.horarios,
+      total_horarios: horariosResult.total,
+      duracao_minutos: duracao_minutos,
+      texto_formatado: respostaFormatada.texto,
+      mensagem: `✅ Encontramos ${horariosResult.total} horário(s) disponível(is)`
+    };
+
+  } catch (error) {
+    log('TOOL', 'Erro ao consultar horários para agendamento:', error.message, LogLevel.ERROR);
+    return { success: false, horarios: [], error: error.message };
   }
 }
 
@@ -3342,6 +3781,60 @@ const toolDefinitions = [
       required: ["cliente_id", "pet_id", "data_hora"]
     }
   },
+  {
+    name: "consultar_horarios_agendamento",
+    description: "Consulta horários disponíveis para agendamento (NÃO agenda). Sugere profissional automaticamente e retorna lista de horários livres. Use quando cliente quiser VER opções antes de agendar.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        cliente_id: { type: "integer", description: "ID do cliente (opcional)" },
+        pet_id: { type: "integer", description: "ID do pet (obrigatório)" },
+        servico_descricao: { type: "string", description: "Descrição do serviço (ex: consulta, banho)" },
+        veterinario_id: { type: "integer", description: "ID do veterinário (opcional - será sugerido automaticamente)" },
+        data: { type: "string", description: "Data desejada (YYYY-MM-DD)" },
+        duracao_minutos: { type: "integer", description: "Duração em minutos (padrão: 30)" }
+      },
+      required: ["pet_id", "data"]
+    }
+  },
+  {
+    name: "listar_horarios_disponiveis_profissional",
+    description: "Lista horários livres de um profissional específico em uma data",
+    inputSchema: {
+      type: "object",
+      properties: {
+        veterinario_id: { type: "integer", description: "ID do veterinário" },
+        data: { type: "string", description: "Data (YYYY-MM-DD)" },
+        duracao_minutos: { type: "integer", description: "Duração em minutos (padrão: 30)" },
+        limite: { type: "integer", description: "Máximo de horários a retornar (padrão: 10)" }
+      },
+      required: ["veterinario_id", "data"]
+    }
+  },
+  {
+    name: "buscar_planos_personalizados",
+    description: "Busca planos personalizados baseado nas raças dos pets do cliente. Retorna planos específicos para as raças + planos genéricos.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        cliente_id: { type: "integer", description: "ID do cliente" }
+      },
+      required: ["cliente_id"]
+    }
+  },
+  {
+    name: "formatar_resposta_compacta",
+    description: "Formata dados em texto compacto otimizado para chatbot (limite 2000 caracteres). Tipos: horarios, planos, agendamentos, pets",
+    inputSchema: {
+      type: "object",
+      properties: {
+        dados: { type: "object", description: "Dados a formatar" },
+        tipo: { type: "string", description: "Tipo de formatação: horarios, planos, agendamentos, pets" },
+        limite_caracteres: { type: "integer", description: "Limite de caracteres (padrão: 1800)" }
+      },
+      required: ["dados", "tipo"]
+    }
+  },
 
   // Busca e Workflow Antigo
   {
@@ -3468,7 +3961,11 @@ const toolFunctions = {
   // Busca e Workflows
   busca_global: handleValidationErrors(buscaGlobal),
   workflow_novo_cliente: handleValidationErrors(workflowNovoCliente),
-  workflow_agendamento_completo: handleValidationErrors(workflowAgendamentoCompleto)
+  workflow_agendamento_completo: handleValidationErrors(workflowAgendamentoCompleto),
+  consultar_horarios_agendamento: handleValidationErrors(consultarHorariosAgendamento),
+  listar_horarios_disponiveis_profissional: handleValidationErrors(listarHorariosDisponiveisProfissional),
+  buscar_planos_personalizados: handleValidationErrors(buscarPlanosPersonalizados),
+  formatar_resposta_compacta: handleValidationErrors(formatarRespostaCompacta)
 };
 
 // ==================== MÉTRICAS ====================
