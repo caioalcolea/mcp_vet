@@ -2,14 +2,16 @@
 
 /**
  * VetCare MCP Server - Sistema de Gestão Veterinária
- * Versão 4.0.0 - PRODUÇÃO OTIMIZADA
+ * Versão 4.1.0 - PRODUÇÃO OTIMIZADA
  *
- * ✨ RECURSOS v4.0:
- *  - 45+ ferramentas completas de gestão veterinária
- *  - NOVA: Histórico clínico completo (vacinas, peso, exames, consultas)
- *  - NOVA: Verificação inteligente de vacinas atrasadas
- *  - NOVA: Workflow de agendamento com validação automática
- *  - NOVA: Validação de horários disponíveis em tempo real
+ * ✨ RECURSOS v4.1:
+ *  - 46 ferramentas completas de gestão veterinária
+ *  - NOVO: Sugestão inteligente de profissionais (Thais/Gustavo/Banho e Tosa)
+ *  - NOVO: Integração automática de profissionais no workflow de agendamento
+ *  - Histórico clínico completo (vacinas, peso, exames, consultas)
+ *  - Verificação inteligente de vacinas atrasadas
+ *  - Workflow de agendamento com validação automática
+ *  - Validação de horários disponíveis em tempo real
  *  - Sistema financeiro integrado (contas, caixa, vendas)
  *  - Dashboard com insights e KPIs
  *  - Gestão de estoque e produtos fracionados
@@ -77,9 +79,9 @@ const CONFIG = {
   }
 };
 
-console.log('🚀 VetCare MCP Server v4.0.0 - Produção Otimizada');
+console.log('🚀 VetCare MCP Server v4.1.0 - Produção Otimizada');
 console.log('====================================================');
-console.log('📊 45+ ferramentas disponíveis');
+console.log('📊 46 ferramentas disponíveis');
 console.log('🔒 Proteção anti-overload ativa (buscas obrigatórias)');
 console.log('✅ 100% integrado com API real: https://vet.talkhub.me/api');
 
@@ -1227,6 +1229,132 @@ async function listarVeterinarios() {
   }
 }
 
+async function sugerirProfissional({ tipo_servico, especie_animal, pet_id }) {
+  log('TOOL', 'sugerir_profissional', { tipo_servico, especie_animal, pet_id });
+  try {
+    /**
+     * REGRAS DE NEGÓCIO - SUGESTÃO DE PROFISSIONAIS:
+     *
+     * IDs dos Profissionais:
+     * - 14: Thais Bregadioli D'Ávila (Clínico Geral)
+     * - 8: Gustavo D'Ávila (Clínico Geral / Aves e Exóticos / Cirurgias)
+     * - 9: Banho e Tosa (Estética Animal)
+     * - 6: Angelica Medeiros (Clínico Geral) - usar apenas quando especificado
+     * - 15: Cibele Zanom (Oncologista) - usar apenas quando especificado
+     * - 16: Marita Toledo (Cirurgião) - usar apenas quando especificado
+     * - 17: Luisa - usar apenas quando especificado
+     *
+     * Regras:
+     * 1. Consultas para cães e gatos → Thais (14)
+     * 2. Consultas com aves ou animais exóticos → Gustavo (8)
+     * 3. Cirurgias → Gustavo (8)
+     * 4. Banho e tosa → Banho e Tosa (9)
+     * 5. Outros casos → solicitar especificação
+     */
+
+    // Obter informações do pet se pet_id fornecido
+    let especie = especie_animal;
+    if (pet_id && !especie) {
+      const petResult = await obterPet({ pet_id });
+      if (petResult.success && petResult.pet) {
+        especie = petResult.pet.especie;
+      }
+    }
+
+    // Normalizar strings para comparação
+    const tipoNormalizado = (tipo_servico || '').toLowerCase().trim();
+    const especieNormalizada = (especie || '').toLowerCase().trim();
+
+    // REGRA 4: Banho e Tosa
+    if (tipoNormalizado.includes('banho') || tipoNormalizado.includes('tosa') ||
+        tipoNormalizado.includes('estetica') || tipoNormalizado.includes('grooming')) {
+      return {
+        success: true,
+        veterinario_id: 9,
+        veterinario_nome: 'Banho e Tosa',
+        especialidade: 'Estética Animal',
+        motivo: 'Serviço de banho e tosa',
+        regra_aplicada: 'banho_tosa'
+      };
+    }
+
+    // REGRA 3: Cirurgias → Gustavo
+    if (tipoNormalizado.includes('cirurgia') || tipoNormalizado.includes('cirurgico') ||
+        tipoNormalizado.includes('operacao') || tipoNormalizado.includes('procedimento cirurgico')) {
+      return {
+        success: true,
+        veterinario_id: 8,
+        veterinario_nome: 'Gustavo D\'Ávila',
+        especialidade: 'Clínico Geral / Cirurgias',
+        motivo: 'Procedimento cirúrgico',
+        regra_aplicada: 'cirurgia'
+      };
+    }
+
+    // REGRA 2: Aves ou Animais Exóticos → Gustavo
+    if (especieNormalizada) {
+      const especiesExoticas = ['ave', 'passaro', 'papagaio', 'calopsita', 'canario',
+                                'periquito', 'arara', 'reptil', 'cobra', 'lagarto',
+                                'tartaruga', 'jabuti', 'hamster', 'porquinho', 'chinchila',
+                                'furão', 'coelho', 'peixe', 'iguana'];
+
+      const isExotico = especiesExoticas.some(e => especieNormalizada.includes(e));
+
+      if (isExotico) {
+        return {
+          success: true,
+          veterinario_id: 8,
+          veterinario_nome: 'Gustavo D\'Ávila',
+          especialidade: 'Clínico Geral / Aves e Exóticos',
+          motivo: `Especialista em ${especie || 'animais exóticos'}`,
+          regra_aplicada: 'aves_exoticos'
+        };
+      }
+    }
+
+    // REGRA 1: Consultas para Cães e Gatos → Thais
+    if (especieNormalizada && (especieNormalizada.includes('cao') || especieNormalizada.includes('cão') ||
+        especieNormalizada.includes('cachorro') || especieNormalizada.includes('dog') ||
+        especieNormalizada.includes('gato') || especieNormalizada.includes('felino') ||
+        especieNormalizada.includes('cat'))) {
+
+      // Confirmar que é consulta (ou tipo não especificado)
+      if (!tipoNormalizado || tipoNormalizado.includes('consulta') ||
+          tipoNormalizado.includes('atendimento') || tipoNormalizado.includes('clinico')) {
+        return {
+          success: true,
+          veterinario_id: 14,
+          veterinario_nome: 'Thais Bregadioli D\'Ávila',
+          especialidade: 'Clínico Geral',
+          motivo: `Consulta clínica para ${especie || 'cães e gatos'}`,
+          regra_aplicada: 'caes_gatos'
+        };
+      }
+    }
+
+    // REGRA 5: Caso não se encaixe em nenhuma regra
+    return {
+      success: false,
+      veterinario_id: null,
+      veterinario_nome: null,
+      error: 'Não foi possível sugerir profissional automaticamente. Por favor, especifique o profissional desejado.',
+      sugestao: 'Use listar_veterinarios para ver todos os profissionais disponíveis.',
+      info_fornecida: {
+        tipo_servico: tipo_servico || 'não especificado',
+        especie_animal: especie || 'não especificado'
+      }
+    };
+
+  } catch (error) {
+    log('TOOL', 'Erro ao sugerir profissional:', error.message, LogLevel.ERROR);
+    return {
+      success: false,
+      veterinario_id: null,
+      error: error.message
+    };
+  }
+}
+
 // ==================== FERRAMENTAS - VACINAS ====================
 
 async function listarVacinasAtivas() {
@@ -1782,11 +1910,34 @@ async function workflowAgendamentoCompleto({
       resultado.etapas.servico = servicoResult.servicos[0];
     }
 
+    // Etapa 1.5: Sugerir profissional automaticamente se não especificado
+    let veterinarioIdFinal = veterinario_id;
+
+    if (!veterinarioIdFinal) {
+      const tipo = resultado.etapas.servico?.tipo || servico_descricao || 'consulta';
+
+      const sugestaoResult = await sugerirProfissional({
+        tipo_servico: tipo,
+        pet_id: pet_id
+      });
+
+      if (sugestaoResult.success && sugestaoResult.veterinario_id) {
+        veterinarioIdFinal = sugestaoResult.veterinario_id;
+        resultado.etapas.sugestao_profissional = {
+          veterinario_id: sugestaoResult.veterinario_id,
+          veterinario_nome: sugestaoResult.veterinario_nome,
+          motivo: sugestaoResult.motivo,
+          regra_aplicada: sugestaoResult.regra_aplicada
+        };
+        log('TOOL', `✓ Profissional sugerido automaticamente: ${sugestaoResult.veterinario_nome} (${sugestaoResult.veterinario_id})`);
+      }
+    }
+
     // Etapa 2: Validar horário (se solicitado ou se veterinário especificado)
-    if ((validar_antes === true || veterinario_id) && veterinario_id) {
+    if ((validar_antes === true || veterinarioIdFinal) && veterinarioIdFinal) {
       const validacaoResult = await validarHorarioDisponivel({
         data_hora,
-        veterinario_id,
+        veterinario_id: veterinarioIdFinal,
         duracao_minutos: resultado.etapas.servico?.duracao_minutos || 30
       });
 
@@ -1808,7 +1959,7 @@ async function workflowAgendamentoCompleto({
         cliente_id: parseInt(cliente_id),
         pet_id: parseInt(pet_id),
         servico_id: resultado.etapas.servico?.id || null,
-        veterinario_id: veterinario_id ? parseInt(veterinario_id) : null,
+        veterinario_id: veterinarioIdFinal ? parseInt(veterinarioIdFinal) : null,
         data_hora,
         tipo: resultado.etapas.servico?.tipo || 'Consulta',
         duracao_minutos: resultado.etapas.servico?.duracao_minutos || 30,
@@ -2737,7 +2888,28 @@ const toolDefinitions = [
     description: "Lista veterinários ativos da clínica",
     inputSchema: { type: "object", properties: {} }
   },
-  
+  {
+    name: "sugerir_profissional",
+    description: "Sugere o profissional mais adequado baseado no tipo de serviço e espécie do animal. Regras: Consultas cães/gatos→Thais(14), Aves/exóticos→Gustavo(8), Cirurgias→Gustavo(8), Banho e tosa→Banho e Tosa(9)",
+    inputSchema: {
+      type: "object",
+      properties: {
+        tipo_servico: {
+          type: "string",
+          description: "Tipo de serviço: consulta, cirurgia, banho e tosa, etc"
+        },
+        especie_animal: {
+          type: "string",
+          description: "Espécie do animal: cão, gato, ave, etc (opcional se pet_id fornecido)"
+        },
+        pet_id: {
+          type: "integer",
+          description: "ID do pet para obter espécie automaticamente (opcional)"
+        }
+      }
+    }
+  },
+
   // Vacinas
   {
     name: "listar_vacinas_ativas",
@@ -3244,6 +3416,7 @@ const toolFunctions = {
   listar_servicos_ativos: handleValidationErrors(listarServicosAtivos),
   buscar_servicos: handleValidationErrors(buscarServicos),
   listar_veterinarios: handleValidationErrors(listarVeterinarios),
+  sugerir_profissional: handleValidationErrors(sugerirProfissional),
   listar_planos: handleValidationErrors(listarPlanos),
 
   // Vacinas
