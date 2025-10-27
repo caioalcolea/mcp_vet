@@ -558,7 +558,7 @@ export class VetCareApiService {
 
       for (const customer of customers) {
         try {
-          const response = await this.client.get<VetCareContaReceber[]>('/contas-receber', {
+          const response = await this.client.get<VetCareContaReceber[]>('/financeiro/contas-receber', {
             params: { cliente_id: customer.id }
           });
           const records = response.data;
