@@ -23,7 +23,7 @@ export class FinancialReactivation {
       FROM financial_debts fd
       INNER JOIN customers c ON fd.customer_id = c.id
       WHERE fd.paid = FALSE
-        AND fd.service_date < CURDATE()
+        AND fd.service_date < CURRENT_DATE
         AND c.phone IS NOT NULL
         AND c.phone != ''
       ORDER BY fd.service_date ASC
@@ -101,7 +101,7 @@ export class FinancialReactivation {
     const query = `
       UPDATE financial_debts
       SET last_charge_date = NOW()
-      WHERE id = ?
+      WHERE id = $1
     `;
 
     try {
@@ -124,7 +124,7 @@ export class FinancialReactivation {
     const query = `
       INSERT INTO reactivation_logs
         (customer_id, reactivation_type, message_sent, sent_at, status, error_message)
-      VALUES (?, 'financial', ?, NOW(), ?, ?)
+      VALUES ($1, 'financial', $2, NOW(), $3, $4)
     `;
 
     const messageData = JSON.stringify({

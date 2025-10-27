@@ -24,7 +24,7 @@ export class AppointmentConfirmation {
       INNER JOIN pets p ON a.pet_id = p.id
       INNER JOIN customers c ON p.customer_id = c.id
       WHERE a.status = 'agendado'
-        AND DATE(a.appointment_date) = DATE_ADD(CURDATE(), INTERVAL 1 DAY)
+        AND DATE(a.appointment_date) = CURRENT_DATE + INTERVAL '1 day'
         AND c.phone IS NOT NULL
         AND c.phone != ''
       ORDER BY a.appointment_date ASC
@@ -48,8 +48,8 @@ export class AppointmentConfirmation {
       SELECT COUNT(*) as count
       FROM appointments a
       INNER JOIN pets p ON a.pet_id = p.id
-      WHERE p.customer_id = ?
-        AND a.id != ?
+      WHERE p.customer_id = $1
+        AND a.id != $2
         AND a.appointment_date > NOW()
         AND a.status IN ('agendado', 'confirmado')
         AND (a.appointment_type = 'retorno' OR a.appointment_type = 'consulta')
@@ -71,10 +71,10 @@ export class AppointmentConfirmation {
     const query = `
       SELECT COUNT(*) as count
       FROM reactivation_logs
-      WHERE customer_id = ?
+      WHERE customer_id = $1
         AND reactivation_type = 'appointment'
-        AND JSON_EXTRACT(message_sent, '$.appointmentId') = ?
-        AND DATE(sent_at) = CURDATE()
+        AND (message_sent->>'appointmentId')::INTEGER = $2
+        AND DATE(sent_at) = CURRENT_DATE
     `;
 
     try {
@@ -125,8 +125,8 @@ export class AppointmentConfirmation {
   async updateAppointmentStatus(appointmentId: number, status: 'confirmado' | 'agendado'): Promise<void> {
     const query = `
       UPDATE appointments
-      SET status = ?
-      WHERE id = ?
+      SET status = $1
+      WHERE id = $2
     `;
 
     try {
@@ -149,7 +149,7 @@ export class AppointmentConfirmation {
     const query = `
       INSERT INTO reactivation_logs
         (customer_id, reactivation_type, message_sent, sent_at, status, error_message)
-      VALUES (?, 'appointment', ?, NOW(), ?, ?)
+      VALUES ($1, 'appointment', $2, NOW(), $3, $4)
     `;
 
     const messageData = JSON.stringify({
@@ -185,7 +185,7 @@ export class AppointmentConfirmation {
       for (const appointment of appointments) {
         try {
           // Buscar customer_id
-          const petQuery = `SELECT customer_id FROM pets WHERE id = ?`;
+          const petQuery = `SELECT customer_id FROM pets WHERE id = $1`;
           const petResult = await database.query<{ customer_id: number }>(petQuery, [appointment.pet_id]);
 
           if (petResult.length === 0) {

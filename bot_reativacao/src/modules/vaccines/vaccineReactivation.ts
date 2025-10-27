@@ -56,10 +56,10 @@ export class VaccineReactivation {
     const query = `
       SELECT COUNT(*) as count
       FROM reactivation_logs
-      WHERE customer_id = ?
+      WHERE customer_id = $1
         AND reactivation_type = 'vaccine'
-        AND JSON_EXTRACT(message_sent, '$.vaccineId') = ?
-        AND DATE(sent_at) = CURDATE()
+        AND (message_sent->>'vaccineId')::INTEGER = $2
+        AND DATE(sent_at) = CURRENT_DATE
     `;
 
     try {
@@ -122,7 +122,7 @@ export class VaccineReactivation {
     const query = `
       INSERT INTO reactivation_logs
         (customer_id, reactivation_type, message_sent, sent_at, status, error_message)
-      VALUES (?, 'vaccine', ?, NOW(), ?, ?)
+      VALUES ($1, 'vaccine', $2, NOW(), $3, $4)
     `;
 
     const messageData = JSON.stringify({
@@ -157,7 +157,7 @@ export class VaccineReactivation {
       for (const vaccine of vaccines) {
         try {
           // Buscar customer_id do pet
-          const petQuery = `SELECT customer_id FROM pets WHERE id = ?`;
+          const petQuery = `SELECT customer_id FROM pets WHERE id = $1`;
           const petResult = await database.query<{ customer_id: number }>(petQuery, [vaccine.pet_id]);
 
           if (petResult.length === 0) {

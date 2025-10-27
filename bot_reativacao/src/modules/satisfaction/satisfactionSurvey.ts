@@ -27,7 +27,7 @@ export class SatisfactionSurvey {
       INNER JOIN pets p ON cs.pet_id = p.id
       INNER JOIN customers c ON p.customer_id = c.id
       WHERE cs.satisfaction_sent = FALSE
-        AND cs.service_date >= DATE_SUB(NOW(), INTERVAL 24 HOUR)
+        AND cs.service_date >= NOW() - INTERVAL '24 hours'
         AND cs.service_date <= NOW()
         AND c.phone IS NOT NULL
         AND c.phone != ''
@@ -143,7 +143,7 @@ export class SatisfactionSurvey {
       UPDATE completed_services
       SET satisfaction_sent = TRUE,
           satisfaction_sent_at = NOW()
-      WHERE id = ?
+      WHERE id = $1
     `;
 
     try {
@@ -166,7 +166,7 @@ export class SatisfactionSurvey {
     const query = `
       INSERT INTO reactivation_logs
         (customer_id, reactivation_type, message_sent, sent_at, status, error_message)
-      VALUES (?, 'satisfaction', ?, NOW(), ?, ?)
+      VALUES ($1, 'satisfaction', $2, NOW(), $3, $4)
     `;
 
     const messageData = JSON.stringify({
@@ -201,7 +201,7 @@ export class SatisfactionSurvey {
       for (const service of services) {
         try {
           // Buscar customer_id
-          const petQuery = `SELECT customer_id FROM pets WHERE id = ?`;
+          const petQuery = `SELECT customer_id FROM pets WHERE id = $1`;
           const petResult = await database.query<{ customer_id: number }>(petQuery, [service.pet_id]);
 
           if (petResult.length === 0) {

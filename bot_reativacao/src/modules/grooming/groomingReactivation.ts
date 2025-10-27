@@ -64,7 +64,7 @@ export class GroomingReactivation {
         services_included
       FROM grooming_plans
       WHERE breed_specific = TRUE
-        AND LOWER(breeds) LIKE LOWER(?)
+        AND LOWER(breeds) LIKE LOWER($1)
       ORDER BY monthly_price ASC
     `;
 
@@ -110,10 +110,10 @@ export class GroomingReactivation {
     const query = `
       SELECT COUNT(*) as count
       FROM reactivation_logs
-      WHERE customer_id = ?
+      WHERE customer_id = $1
         AND reactivation_type = 'grooming'
-        AND JSON_EXTRACT(message_sent, '$.serviceId') = ?
-        AND sent_at >= DATE_SUB(NOW(), INTERVAL ? DAY)
+        AND (message_sent->>'serviceId')::INTEGER = $2
+        AND sent_at >= NOW() - ($3 || ' days')::INTERVAL
     `;
 
     try {
@@ -197,7 +197,7 @@ export class GroomingReactivation {
     const query = `
       INSERT INTO reactivation_logs
         (customer_id, reactivation_type, message_sent, sent_at, status, error_message)
-      VALUES (?, 'grooming', ?, NOW(), ?, ?)
+      VALUES ($1, 'grooming', $2, NOW(), $3, $4)
     `;
 
     const messageData = JSON.stringify({
@@ -233,7 +233,7 @@ export class GroomingReactivation {
       for (const service of services) {
         try {
           // Buscar customer_id
-          const petQuery = `SELECT customer_id FROM pets WHERE id = ?`;
+          const petQuery = `SELECT customer_id FROM pets WHERE id = $1`;
           const petResult = await database.query<{ customer_id: number }>(petQuery, [service.pet_id]);
 
           if (petResult.length === 0) {
