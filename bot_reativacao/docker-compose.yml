@@ -1,0 +1,80 @@
+version: '3.8'
+
+services:
+  bot-reativacao:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: bot-reativacao
+    restart: unless-stopped
+    environment:
+      - PORT=2080
+      - NODE_ENV=production
+    env_file:
+      - .env
+    ports:
+      - "2080:2080"
+    networks:
+      - traefik-public
+    deploy:
+      replicas: 1
+      update_config:
+        parallelism: 1
+        delay: 10s
+        order: start-first
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+      labels:
+        # Traefik configuration
+        - "traefik.enable=true"
+        - "traefik.docker.network=traefik-public"
+
+        # HTTP Router
+        - "traefik.http.routers.bot-reativacao.rule=Host(`automacaobs.talkhub.me`)"
+        - "traefik.http.routers.bot-reativacao.entrypoints=web"
+        - "traefik.http.routers.bot-reativacao.middlewares=redirect-to-https@docker"
+
+        # HTTPS Router
+        - "traefik.http.routers.bot-reativacao-secure.rule=Host(`automacaobs.talkhub.me`)"
+        - "traefik.http.routers.bot-reativacao-secure.entrypoints=websecure"
+        - "traefik.http.routers.bot-reativacao-secure.tls=true"
+        - "traefik.http.routers.bot-reativacao-secure.tls.certresolver=letsencrypt"
+
+        # Service
+        - "traefik.http.services.bot-reativacao.loadbalancer.server.port=2080"
+
+        # Middleware para redirecionar HTTP para HTTPS
+        - "traefik.http.middlewares.redirect-to-https.redirectscheme.scheme=https"
+        - "traefik.http.middlewares.redirect-to-https.redirectscheme.permanent=true"
+
+        # Health check
+        - "traefik.http.services.bot-reativacao.loadbalancer.healthcheck.path=/health"
+        - "traefik.http.services.bot-reativacao.loadbalancer.healthcheck.interval=30s"
+        - "traefik.http.services.bot-reativacao.loadbalancer.healthcheck.timeout=10s"
+    labels:
+      # Labels para modo não-swarm (caso necessário)
+      - "traefik.enable=true"
+      - "traefik.docker.network=traefik-public"
+      - "traefik.http.routers.bot-reativacao.rule=Host(`automacaobs.talkhub.me`)"
+      - "traefik.http.routers.bot-reativacao.entrypoints=web"
+      - "traefik.http.routers.bot-reativacao.middlewares=redirect-to-https"
+      - "traefik.http.routers.bot-reativacao-secure.rule=Host(`automacaobs.talkhub.me`)"
+      - "traefik.http.routers.bot-reativacao-secure.entrypoints=websecure"
+      - "traefik.http.routers.bot-reativacao-secure.tls=true"
+      - "traefik.http.routers.bot-reativacao-secure.tls.certresolver=letsencrypt"
+      - "traefik.http.services.bot-reativacao.loadbalancer.server.port=2080"
+      - "traefik.http.middlewares.redirect-to-https.redirectscheme.scheme=https"
+      - "traefik.http.middlewares.redirect-to-https.redirectscheme.permanent=true"
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:2080/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+networks:
+  traefik-public:
+    external: true

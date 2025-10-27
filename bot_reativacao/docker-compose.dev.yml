@@ -1,0 +1,48 @@
+version: '3.8'
+
+services:
+  bot-reativacao:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: bot-reativacao-dev
+    restart: unless-stopped
+    environment:
+      - PORT=2080
+      - NODE_ENV=development
+    env_file:
+      - .env
+    ports:
+      - "2080:2080"
+    volumes:
+      - ./src:/app/src
+      - ./logs:/app/logs
+    networks:
+      - bot-network
+    depends_on:
+      - mysql
+    command: npm run dev
+
+  mysql:
+    image: mysql:8.0
+    container_name: bot-reativacao-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: root123
+      MYSQL_DATABASE: veterinaria
+      MYSQL_USER: vetuser
+      MYSQL_PASSWORD: vetpass123
+    ports:
+      - "3307:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - ./database_schema.sql:/docker-entrypoint-initdb.d/schema.sql
+    networks:
+      - bot-network
+
+networks:
+  bot-network:
+    driver: bridge
+
+volumes:
+  mysql-data:
