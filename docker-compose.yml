@@ -1,0 +1,77 @@
+version: "3.7"
+
+services:
+  bichosolto-mcp-server:
+    image: node:20-alpine
+    working_dir: /app
+    command: sh -c "apk add --no-cache curl && npm install && node src/server.js"
+    
+    volumes:
+      - ./src:/app/src
+      - ./package.json:/app/package.json
+      - bichosolto_mcp_node_modules:/app/node_modules
+    
+    networks:
+      - talkhub
+    
+    environment:
+      - PORT=3011
+      - HOST=0.0.0.0
+      - DOMAIN=mcp-bsvet.talkhub.me
+      - VETCARE_API_URL=https://vet.talkhub.me/api
+      - NODE_ENV=production
+      - TZ=America/Sao_Paulo
+    
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3011/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    
+    deploy:
+      mode: replicated
+      replicas: 1
+      
+      placement:
+        constraints:
+          - node.role == manager
+      
+      resources:
+        limits:
+          cpus: "1"
+          memory: 1024M
+        reservations:
+          cpus: "0.5"
+          memory: 512M
+      
+      labels:
+        - "traefik.enable=true"
+        - "traefik.docker.network=talkhub"
+        
+        # CRITICAL: Define the service FIRST
+        - "traefik.http.services.vetcare-mcp-svc.loadbalancer.server.port=3011"
+        
+        # HTTP Router (redirect to HTTPS)
+        - "traefik.http.routers.vetcare-mcp-http.rule=Host(`mcp-bsvet.talkhub.me`)"
+        - "traefik.http.routers.vetcare-mcp-http.entrypoints=web"
+        - "traefik.http.routers.vetcare-mcp-http.middlewares=https-redirect"
+        
+        # HTTPS Router - CONNECTED TO SERVICE
+        - "traefik.http.routers.vetcare-mcp-https.rule=Host(`mcp-bsvet.talkhub.me`)"
+        - "traefik.http.routers.vetcare-mcp-https.entrypoints=websecure"
+        - "traefik.http.routers.vetcare-mcp-https.tls=true"
+        - "traefik.http.routers.vetcare-mcp-https.tls.certresolver=letsencryptresolver"
+        - "traefik.http.routers.vetcare-mcp-https.service=vetcare-mcp-svc"
+        
+        # HTTPS Redirect Middleware
+        - "traefik.http.middlewares.https-redirect.redirectscheme.scheme=https"
+        - "traefik.http.middlewares.https-redirect.redirectscheme.permanent=true"
+
+volumes:
+  bichosolto_mcp_node_modules:
+    external: true
+
+networks:
+  talkhub:
+    external: true
