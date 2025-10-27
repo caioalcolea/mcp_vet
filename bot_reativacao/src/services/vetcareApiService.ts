@@ -207,35 +207,63 @@ export class VetCareApiService {
     logger.info('Iniciando sincronização de pets do VetCare');
 
     try {
-      logger.info(`GET ${this.config.apiUrl}/pets?ativo=1`);
-      const response = await this.client.get<VetCarePet[]>('/pets', {
-        params: { ativo: 1 }
-      });
-      const pets = response.data;
+      // Testar primeiro sem filtro ativo=1
+      logger.info(`GET ${this.config.apiUrl}/pets`);
+      const response = await this.client.get<any[]>('/pets');
+      const petsData = response.data;
 
-      if (!Array.isArray(pets)) {
-        logger.error('Resposta da API não é um array:', typeof pets);
+      if (!Array.isArray(petsData)) {
+        logger.error('Resposta da API não é um array:', typeof petsData);
         return { synced: 0, errors: 1 };
       }
 
-      logger.info(`API retornou ${pets.length} pets`);
+      logger.info(`API retornou ${petsData.length} pets`);
 
       let synced = 0;
       let errors = 0;
 
-      for (const pet of pets) {
+      for (const petData of petsData) {
         try {
-          // Buscar cliente_id do pet através da API se não vier no objeto
+          // Converter estrutura da API para nosso formato
+          let pet: VetCarePet;
+
+          // Se vier com estrutura aninhada (pet.pet)
+          if (petData.pet) {
+            pet = {
+              id: petData.pet.id || petData.id,
+              nome: petData.pet.nome,
+              especie: petData.pet.especie,
+              raca: petData.pet.raca,
+              sexo: petData.pet.sexo,
+              data_nascimento: petData.pet.data_nascimento,
+              peso: petData.pet.peso,
+              pelagem: petData.pet.pelagem,
+              observacoes: petData.pet.observacoes,
+              cliente_id: petData.cliente?.id || petData.cliente_id,
+            };
+          } else {
+            // Estrutura normal
+            pet = petData as VetCarePet;
+          }
+
+          // Buscar cliente_id se não vier
           let clienteId = pet.cliente_id;
 
-          if (!clienteId) {
-            // Buscar detalhes completos do pet que incluem cliente_id
-            const detailsResponse = await this.client.get(`/pets/${pet.id}`);
-            clienteId = detailsResponse.data?.cliente?.id;
+          if (!clienteId && petData.cliente) {
+            clienteId = petData.cliente.id;
           }
 
           if (!clienteId) {
-            logger.warn(`Pet ${pet.id} sem cliente_id - pulando`);
+            // Buscar detalhes completos do pet
+            logger.info(`Buscando cliente_id para pet ${pet.id}...`);
+            const detailsResponse = await this.client.get(`/pets/${pet.id}`);
+            const detailsData = detailsResponse.data;
+
+            clienteId = detailsData.cliente?.id || detailsData.pet?.cliente_id;
+          }
+
+          if (!clienteId) {
+            logger.warn(`Pet ${pet.id} (${pet.nome}) sem cliente_id - pulando`);
             errors++;
             continue;
           }
@@ -288,8 +316,13 @@ export class VetCareApiService {
           }
 
           synced++;
+
+          // Log a cada 100 pets para acompanhar progresso
+          if (synced % 100 === 0) {
+            logger.info(`Progresso: ${synced}/${petsData.length} pets sincronizados`);
+          }
         } catch (error: any) {
-          logger.error(`Erro ao sincronizar pet ${pet.id}:`, error.message);
+          logger.error(`Erro ao sincronizar pet ${petData.id || 'unknown'}:`, error.message);
           errors++;
         }
       }
