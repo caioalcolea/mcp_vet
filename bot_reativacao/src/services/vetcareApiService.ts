@@ -79,7 +79,6 @@ export class VetCareApiService {
       baseURL: this.config.apiUrl,
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${this.config.apiToken}`,
       },
       timeout: 30000,
     });
