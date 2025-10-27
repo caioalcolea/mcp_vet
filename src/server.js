@@ -2,21 +2,29 @@
 
 /**
  * VetCare MCP Server - Sistema de Gestão Veterinária
- * Versão 3.0.0 - PRODUÇÃO FINAL
- * 
- * ✨ RECURSOS v3.0:
- *  - 30+ ferramentas completas de gestão veterinária
+ * Versão 4.0.0 - PRODUÇÃO OTIMIZADA
+ *
+ * ✨ RECURSOS v4.0:
+ *  - 45+ ferramentas completas de gestão veterinária
+ *  - NOVA: Histórico clínico completo (vacinas, peso, exames, consultas)
+ *  - NOVA: Verificação inteligente de vacinas atrasadas
+ *  - NOVA: Workflow de agendamento com validação automática
+ *  - NOVA: Validação de horários disponíveis em tempo real
  *  - Sistema financeiro integrado (contas, caixa, vendas)
  *  - Dashboard com insights e KPIs
  *  - Gestão de estoque e produtos fracionados
- *  - Comissões e relatórios gerenciais
- *  - Validação robusta e tratamento de erros
+ *  - Validação OBRIGATÓRIA em buscas (proteção anti-overload)
  *  - Cache inteligente multi-nível com cache negativo
  *  - Rate limiting adaptativo
  *  - Compatível com OpenAI ChatGPT e Claude
  *  - Suporte completo ao protocolo MCP 2024-11-05
- * 
- * API Base: https://vet.talkhub.me/api
+ *
+ * API Base: https://vet.talkhub.me/api (100% funcional)
+ *
+ * 🔒 SEGURANÇA:
+ *  - Nunca retorna listas completas (5000+ clientes protegidos)
+ *  - Busca obrigatória com mínimo 3 caracteres
+ *  - Limite de 50 resultados por busca
  */
 
 import express from 'express';
@@ -69,8 +77,11 @@ const CONFIG = {
   }
 };
 
-console.log('🚀 VetCare MCP Server v3.0.0 - Produção Final');
-console.log('================================================');
+console.log('🚀 VetCare MCP Server v4.0.0 - Produção Otimizada');
+console.log('====================================================');
+console.log('📊 45+ ferramentas disponíveis');
+console.log('🔒 Proteção anti-overload ativa (buscas obrigatórias)');
+console.log('✅ 100% integrado com API real: https://vet.talkhub.me/api');
 
 // ==================== SISTEMA DE LOGGING ====================
 
@@ -688,37 +699,57 @@ async function buscarClientePorTelefone({ telefone }) {
   }
 }
 
-async function listarClientes({ filtros = {} }) {
-  log('TOOL', 'listar_clientes', filtros);
+async function buscarClientes({ termo_busca }) {
+  log('TOOL', 'buscar_clientes', { termo_busca });
   try {
-    let endpoint = '/clientes';
-    const params = [];
-    
-    if (filtros.busca) params.push(`busca=${encodeURIComponent(filtros.busca)}`);
-    if (filtros.cidade) params.push(`cidade=${encodeURIComponent(filtros.cidade)}`);
-    if (filtros.ativo !== undefined) params.push(`ativo=${filtros.ativo ? 1 : 0}`);
-    if (filtros.com_debito) params.push(`com_debito=1`);
-    if (filtros.page) params.push(`page=${filtros.page}`);
-    if (filtros.per_page) params.push(`per_page=${filtros.per_page}`);
-    
-    if (params.length > 0) {
-      endpoint += '?' + params.join('&');
+    // VALIDAÇÃO OBRIGATÓRIA: Nunca buscar sem filtro (proteção contra 5000+ registros)
+    if (!termo_busca || termo_busca.trim().length < 3) {
+      return {
+        success: false,
+        clientes: [],
+        error: 'Termo de busca obrigatório (mínimo 3 caracteres). Informe nome, telefone, CPF ou email do cliente.'
+      };
     }
-    
+
+    const termoLimpo = termo_busca.trim();
+    const endpoint = `/clientes?busca=${encodeURIComponent(termoLimpo)}`;
+
+    // Cache por termo de busca
+    const cacheKey = `clientes_busca_${termoLimpo.toLowerCase()}`;
+    const cached = cacheInstances.clientes.get(cacheKey);
+    if (cached) {
+      if (cached.cached && cached.error) {
+        return { success: false, clientes: [], error: cached.error };
+      }
+      log('TOOL', '✓ Clientes encontrados no cache');
+      return cached;
+    }
+
     const result = await apiRequest(endpoint);
-    
+
     if (!result.success) {
+      cacheInstances.clientes.setNegative(cacheKey, result.error);
       return { success: false, clientes: [], error: result.error };
     }
-    
-    return {
+
+    const clientes = Array.isArray(result.data) ? result.data : [];
+
+    // Limitar a 50 resultados para performance
+    const clientesLimitados = clientes.slice(0, 50);
+
+    const response = {
       success: true,
-      clientes: result.data,
-      total: Array.isArray(result.data) ? result.data.length : result.data.total
+      clientes: clientesLimitados,
+      total: clientesLimitados.length,
+      total_encontrado: clientes.length,
+      limitado: clientes.length > 50
     };
-    
+
+    cacheInstances.clientes.set(cacheKey, response, CONFIG.CACHE_TTL.MEDIUM);
+    return response;
+
   } catch (error) {
-    log('TOOL', 'Erro ao listar clientes:', error.message, LogLevel.ERROR);
+    log('TOOL', 'Erro ao buscar clientes:', error.message, LogLevel.ERROR);
     return { success: false, clientes: [], error: error.message };
   }
 }
@@ -1021,25 +1052,106 @@ async function atualizarStatusAgendamento({ agendamento_id, status }) {
   log('TOOL', `atualizar_status_agendamento: ${agendamento_id} -> ${status}`);
   try {
     const statusValidado = Validators.statusAgendamento(status);
-    
-    const result = await apiRequest(`/agendamentos/${agendamento_id}/status`, 'PUT', { 
-      status: statusValidado 
+
+    const result = await apiRequest(`/agendamentos/${agendamento_id}/status`, 'PUT', {
+      status: statusValidado
     });
-    
+
     if (!result.success) {
       return { success: false, error: result.error };
     }
-    
+
     cacheInstances.agendamentos.deletePattern(/agendamento/);
-    
+
     return {
       success: true,
       message: `Status atualizado para: ${statusValidado}`
     };
-    
+
   } catch (error) {
     log('TOOL', 'Erro ao atualizar status:', error.message, LogLevel.ERROR);
     return { success: false, error: error.message };
+  }
+}
+
+async function validarHorarioDisponivel({ data_hora, veterinario_id, duracao_minutos, agendamento_id }) {
+  log('TOOL', 'validar_horario_disponivel', { data_hora, veterinario_id });
+  try {
+    if (!data_hora) throw new Error('data_hora é obrigatória');
+    if (!veterinario_id) throw new Error('veterinario_id é obrigatório');
+
+    const payload = {
+      data_hora: Validators.dataHora(data_hora),
+      veterinario_id: parseInt(veterinario_id),
+      duracao_minutos: parseInt(duracao_minutos) || 30
+    };
+
+    // Se estiver remarcando, incluir ID do agendamento
+    if (agendamento_id) {
+      payload.agendamento_id = parseInt(agendamento_id);
+    }
+
+    const result = await apiRequest('/agendamentos/validar-conflito', 'POST', payload);
+
+    if (!result.success) {
+      return { success: false, disponivel: false, error: result.error };
+    }
+
+    return {
+      success: true,
+      disponivel: result.data.disponivel === true,
+      message: result.data.message || '',
+      conflito: result.data.conflito || null
+    };
+
+  } catch (error) {
+    log('TOOL', 'Erro ao validar horário:', error.message, LogLevel.ERROR);
+    return { success: false, disponivel: false, error: error.message };
+  }
+}
+
+async function listarProximosAgendamentos({ cliente_id, limite }) {
+  log('TOOL', 'listar_proximos_agendamentos', { cliente_id });
+  try {
+    if (!cliente_id) throw new Error('cliente_id é obrigatório');
+
+    const hoje = new Date().toISOString().split('T')[0];
+    const endpoint = `/agendamentos?cliente_id=${cliente_id}&data_inicio=${hoje}`;
+
+    // Cache curto (1 min) pois agendamentos mudam frequentemente
+    const cacheKey = `agendamentos_proximos_${cliente_id}`;
+    const cached = cacheInstances.agendamentos.get(cacheKey);
+    if (cached) {
+      log('TOOL', '✓ Próximos agendamentos encontrados no cache');
+      return cached;
+    }
+
+    const result = await apiRequest(endpoint);
+
+    if (!result.success) {
+      return { success: false, agendamentos: [], error: result.error };
+    }
+
+    const agendamentos = Array.isArray(result.data) ? result.data : [];
+
+    // Ordenar por data
+    agendamentos.sort((a, b) => new Date(a.data_hora) - new Date(b.data_hora));
+
+    // Limitar resultados se solicitado
+    const agendamentosLimitados = limite ? agendamentos.slice(0, limite) : agendamentos;
+
+    const response = {
+      success: true,
+      agendamentos: agendamentosLimitados,
+      total: agendamentosLimitados.length
+    };
+
+    cacheInstances.agendamentos.set(cacheKey, response, CONFIG.CACHE_TTL.SHORT);
+    return response;
+
+  } catch (error) {
+    log('TOOL', 'Erro ao listar próximos agendamentos:', error.message, LogLevel.ERROR);
+    return { success: false, agendamentos: [], error: error.message };
   }
 }
 
@@ -1158,68 +1270,639 @@ async function registrarVacinacao({ dados }) {
     if (!dados.pet_id) throw new Error('pet_id é obrigatório');
     if (!dados.vacina_id) throw new Error('vacina_id é obrigatório');
     if (!dados.data_aplicacao) throw new Error('data_aplicacao é obrigatória');
-    
+
     const payload = {
       pet_id: parseInt(dados.pet_id),
       vacina_id: parseInt(dados.vacina_id),
       veterinario_id: dados.veterinario_id ? parseInt(dados.veterinario_id) : null,
       data_aplicacao: Validators.data(dados.data_aplicacao),
-      data_proxima_dose: dados.data_proxima_dose ? Validators.data(dados.data_proxima_dose) : null,
+      proxima_dose: dados.proxima_dose ? Validators.data(dados.proxima_dose) : null,
       lote: dados.lote || '',
       dose: dados.dose || '',
-      observacoes: dados.observacoes || '',
-      valor: dados.valor ? parseFloat(dados.valor) : null
+      observacoes: dados.observacoes || ''
     };
-    
-    const result = await apiRequest('/vacinacoes', 'POST', payload);
-    
+
+    const result = await apiRequest(`/pets/${dados.pet_id}/vacinacao`, 'POST', payload);
+
     if (!result.success) {
       return { success: false, error: result.error };
     }
-    
+
+    // Invalidar cache de vacinações do pet
+    cacheInstances.pets.delete(`vacinacoes_pet_${dados.pet_id}`);
+
     return {
       success: true,
       vacinacao: result.data,
       message: 'Vacinação registrada com sucesso'
     };
-    
+
   } catch (error) {
     log('TOOL', 'Erro ao registrar vacinação:', error.message, LogLevel.ERROR);
     return { success: false, error: error.message };
   }
 }
 
-// ==================== FERRAMENTAS - PRODUTOS ====================
-
-async function listarProdutos({ filtros = {} }) {
-  log('TOOL', 'listar_produtos', filtros);
+async function obterHistoricoVacinacao({ pet_id }) {
+  log('TOOL', 'obter_historico_vacinacao', { pet_id });
   try {
-    let endpoint = '/produtos';
-    const params = [];
-    
-    if (filtros.busca) params.push(`busca=${encodeURIComponent(filtros.busca)}`);
-    if (filtros.categoria) params.push(`categoria=${encodeURIComponent(filtros.categoria)}`);
-    if (filtros.ativo !== undefined) params.push(`ativo=${filtros.ativo ? 1 : 0}`);
-    if (filtros.estoque_baixo) params.push(`estoque_baixo=1`);
-    
-    if (params.length > 0) {
-      endpoint += '?' + params.join('&');
+    if (!pet_id) throw new Error('pet_id é obrigatório');
+
+    const cacheKey = `vacinacoes_pet_${pet_id}`;
+    const cached = cacheInstances.pets.get(cacheKey);
+    if (cached) {
+      if (cached.cached && cached.error) {
+        return { success: false, vacinacoes: [], error: cached.error };
+      }
+      log('TOOL', '✓ Histórico de vacinação encontrado no cache');
+      return cached;
     }
-    
-    const result = await apiRequest(endpoint);
-    
+
+    const result = await apiRequest(`/pets/${pet_id}/vacinacoes`);
+
     if (!result.success) {
-      return { success: false, produtos: [], error: result.error };
+      cacheInstances.pets.setNegative(cacheKey, result.error);
+      return { success: false, vacinacoes: [], error: result.error };
     }
-    
+
+    const vacinacoes = Array.isArray(result.data) ? result.data : [];
+
+    const response = {
+      success: true,
+      vacinacoes,
+      total: vacinacoes.length
+    };
+
+    cacheInstances.pets.set(cacheKey, response, CONFIG.CACHE_TTL.SHORT);
+    return response;
+
+  } catch (error) {
+    log('TOOL', 'Erro ao obter histórico de vacinação:', error.message, LogLevel.ERROR);
+    return { success: false, vacinacoes: [], error: error.message };
+  }
+}
+
+async function obterHistoricoClinico({ pet_id }) {
+  log('TOOL', 'obter_historico_clinico', { pet_id });
+  try {
+    if (!pet_id) throw new Error('pet_id é obrigatório');
+
+    const cacheKey = `historico_clinico_${pet_id}`;
+    const cached = cacheInstances.pets.get(cacheKey);
+    if (cached) {
+      if (cached.cached && cached.error) {
+        return { success: false, historico: [], error: cached.error };
+      }
+      log('TOOL', '✓ Histórico clínico encontrado no cache');
+      return cached;
+    }
+
+    const result = await apiRequest(`/pets/${pet_id}/historico-medico`);
+
+    if (!result.success) {
+      cacheInstances.pets.setNegative(cacheKey, result.error);
+      return { success: false, historico: [], error: result.error };
+    }
+
+    const historico = Array.isArray(result.data) ? result.data : [];
+
+    const response = {
+      success: true,
+      historico,
+      total: historico.length
+    };
+
+    cacheInstances.pets.set(cacheKey, response, CONFIG.CACHE_TTL.SHORT);
+    return response;
+
+  } catch (error) {
+    log('TOOL', 'Erro ao obter histórico clínico:', error.message, LogLevel.ERROR);
+    return { success: false, historico: [], error: error.message };
+  }
+}
+
+async function obterHistoricoPeso({ pet_id }) {
+  log('TOOL', 'obter_historico_peso', { pet_id });
+  try {
+    if (!pet_id) throw new Error('pet_id é obrigatório');
+
+    const cacheKey = `historico_peso_${pet_id}`;
+    const cached = cacheInstances.pets.get(cacheKey);
+    if (cached) {
+      if (cached.cached && cached.error) {
+        return { success: false, historico: [], error: cached.error };
+      }
+      log('TOOL', '✓ Histórico de peso encontrado no cache');
+      return cached;
+    }
+
+    const result = await apiRequest(`/pets/${pet_id}/historico-peso`);
+
+    if (!result.success) {
+      cacheInstances.pets.setNegative(cacheKey, result.error);
+      return { success: false, historico: [], error: result.error };
+    }
+
+    const historico = Array.isArray(result.data) ? result.data : [];
+
+    const response = {
+      success: true,
+      historico,
+      total: historico.length,
+      peso_atual: historico.length > 0 ? historico[0].peso : null
+    };
+
+    cacheInstances.pets.set(cacheKey, response, CONFIG.CACHE_TTL.SHORT);
+    return response;
+
+  } catch (error) {
+    log('TOOL', 'Erro ao obter histórico de peso:', error.message, LogLevel.ERROR);
+    return { success: false, historico: [], error: error.message };
+  }
+}
+
+async function obterExamesPet({ pet_id }) {
+  log('TOOL', 'obter_exames_pet', { pet_id });
+  try {
+    if (!pet_id) throw new Error('pet_id é obrigatório');
+
+    const cacheKey = `exames_pet_${pet_id}`;
+    const cached = cacheInstances.pets.get(cacheKey);
+    if (cached) {
+      if (cached.cached && cached.error) {
+        return { success: false, exames: [], error: cached.error };
+      }
+      log('TOOL', '✓ Exames encontrados no cache');
+      return cached;
+    }
+
+    const result = await apiRequest(`/pets/${pet_id}/exames`);
+
+    if (!result.success) {
+      cacheInstances.pets.setNegative(cacheKey, result.error);
+      return { success: false, exames: [], error: result.error };
+    }
+
+    const exames = Array.isArray(result.data) ? result.data : [];
+
+    const response = {
+      success: true,
+      exames,
+      total: exames.length
+    };
+
+    cacheInstances.pets.set(cacheKey, response, CONFIG.CACHE_TTL.SHORT);
+    return response;
+
+  } catch (error) {
+    log('TOOL', 'Erro ao obter exames do pet:', error.message, LogLevel.ERROR);
+    return { success: false, exames: [], error: error.message };
+  }
+}
+
+async function solicitarExame({ pet_id, tipo_exame_id, veterinario_id, observacoes }) {
+  log('TOOL', 'solicitar_exame', { pet_id, tipo_exame_id });
+  try {
+    if (!pet_id) throw new Error('pet_id é obrigatório');
+    if (!tipo_exame_id) throw new Error('tipo_exame_id é obrigatório');
+    if (!veterinario_id) throw new Error('veterinario_id é obrigatório');
+
+    const payload = {
+      tipo_exame_id: parseInt(tipo_exame_id),
+      veterinario_id: parseInt(veterinario_id),
+      observacoes: observacoes || ''
+    };
+
+    const result = await apiRequest(`/pets/${pet_id}/solicitar-exame`, 'POST', payload);
+
+    if (!result.success) {
+      return { success: false, error: result.error };
+    }
+
+    // Invalidar cache de exames
+    cacheInstances.pets.delete(`exames_pet_${pet_id}`);
+
     return {
       success: true,
-      produtos: result.data,
-      total: result.data.length
+      exame: result.data,
+      message: 'Exame solicitado com sucesso'
     };
-    
+
   } catch (error) {
-    log('TOOL', 'Erro ao listar produtos:', error.message, LogLevel.ERROR);
+    log('TOOL', 'Erro ao solicitar exame:', error.message, LogLevel.ERROR);
+    return { success: false, error: error.message };
+  }
+}
+
+async function listarTiposExame() {
+  log('TOOL', 'listar_tipos_exame');
+  try {
+    const cacheKey = 'tipos_exame_ativos';
+    const cached = cacheInstances.servicos.get(cacheKey);
+    if (cached) {
+      if (cached.cached && cached.error) {
+        return { success: false, tipos: [], error: cached.error };
+      }
+      log('TOOL', '✓ Tipos de exame encontrados no cache');
+      return cached;
+    }
+
+    const result = await apiRequest('/tipos-exame?ativo=1');
+
+    if (!result.success) {
+      cacheInstances.servicos.setNegative(cacheKey, result.error);
+      return { success: false, tipos: [], error: result.error };
+    }
+
+    const tipos = Array.isArray(result.data) ? result.data : [];
+
+    const response = {
+      success: true,
+      tipos,
+      total: tipos.length
+    };
+
+    cacheInstances.servicos.set(cacheKey, response, CONFIG.CACHE_TTL.LONG);
+    return response;
+
+  } catch (error) {
+    log('TOOL', 'Erro ao listar tipos de exame:', error.message, LogLevel.ERROR);
+    return { success: false, tipos: [], error: error.message };
+  }
+}
+
+async function registrarAnamnese({ pet_id, veterinario_id, data_consulta, anamnese, diagnostico, peso_atual }) {
+  log('TOOL', 'registrar_anamnese', { pet_id });
+  try {
+    if (!pet_id) throw new Error('pet_id é obrigatório');
+    if (!veterinario_id) throw new Error('veterinario_id é obrigatório');
+    if (!data_consulta) throw new Error('data_consulta é obrigatória');
+    if (!anamnese) throw new Error('anamnese é obrigatória');
+
+    const payload = {
+      veterinario_id: parseInt(veterinario_id),
+      data_consulta: Validators.data(data_consulta),
+      anamnese: anamnese.trim(),
+      diagnostico: diagnostico?.trim() || '',
+      peso_atual: peso_atual ? parseFloat(peso_atual) : null
+    };
+
+    const result = await apiRequest(`/pets/${pet_id}/anamnese`, 'POST', payload);
+
+    if (!result.success) {
+      return { success: false, error: result.error };
+    }
+
+    // Invalidar caches relacionados
+    cacheInstances.pets.delete(`historico_clinico_${pet_id}`);
+    if (peso_atual) {
+      cacheInstances.pets.delete(`historico_peso_${pet_id}`);
+    }
+
+    return {
+      success: true,
+      anamnese: result.data,
+      message: 'Anamnese registrada com sucesso'
+    };
+
+  } catch (error) {
+    log('TOOL', 'Erro ao registrar anamnese:', error.message, LogLevel.ERROR);
+    return { success: false, error: error.message };
+  }
+}
+
+async function verificarVacinasAtrasadas({ pet_id }) {
+  log('TOOL', 'verificar_vacinas_atrasadas', { pet_id });
+  try {
+    if (!pet_id) throw new Error('pet_id é obrigatório');
+
+    // Buscar histórico de vacinação
+    const resultVacinas = await obterHistoricoVacinacao({ pet_id });
+
+    if (!resultVacinas.success) {
+      return { success: false, error: resultVacinas.error };
+    }
+
+    const hoje = new Date();
+    const vacinasAtrasadas = [];
+    const proximasVacinas = [];
+
+    resultVacinas.vacinacoes.forEach(vacina => {
+      if (vacina.proxima_dose || vacina.data_proxima_dose) {
+        const proximaDose = new Date(vacina.proxima_dose || vacina.data_proxima_dose);
+        const diasDiferenca = Math.ceil((proximaDose - hoje) / (1000 * 60 * 60 * 24));
+
+        if (diasDiferenca < 0) {
+          // Vacina atrasada
+          vacinasAtrasadas.push({
+            ...vacina,
+            dias_atraso: Math.abs(diasDiferenca)
+          });
+        } else if (diasDiferenca <= 30) {
+          // Vacina próxima do vencimento (próximos 30 dias)
+          proximasVacinas.push({
+            ...vacina,
+            dias_restantes: diasDiferenca
+          });
+        }
+      }
+    });
+
+    return {
+      success: true,
+      tem_vacinas_atrasadas: vacinasAtrasadas.length > 0,
+      vacinas_atrasadas: vacinasAtrasadas,
+      proximas_vacinas: proximasVacinas,
+      total_atrasadas: vacinasAtrasadas.length,
+      total_proximas: proximasVacinas.length,
+      mensagem: vacinasAtrasadas.length > 0
+        ? `⚠️ Atenção! ${vacinasAtrasadas.length} vacina(s) atrasada(s)`
+        : proximasVacinas.length > 0
+        ? `📅 ${proximasVacinas.length} vacina(s) próximas do vencimento`
+        : '✅ Todas as vacinas em dia!'
+    };
+
+  } catch (error) {
+    log('TOOL', 'Erro ao verificar vacinas atrasadas:', error.message, LogLevel.ERROR);
+    return { success: false, error: error.message };
+  }
+}
+
+async function buscarServicos({ termo_busca }) {
+  log('TOOL', 'buscar_servicos', { termo_busca });
+  try {
+    // Validação: termo de busca obrigatório
+    if (!termo_busca || termo_busca.trim().length < 2) {
+      return {
+        success: false,
+        servicos: [],
+        error: 'Termo de busca obrigatório (mínimo 2 caracteres). Ex: consulta, banho, vacina, etc.'
+      };
+    }
+
+    const endpoint = `/servicos?busca=${encodeURIComponent(termo_busca.trim())}`;
+
+    const cacheKey = `servicos_busca_${termo_busca.trim().toLowerCase()}`;
+    const cached = cacheInstances.servicos.get(cacheKey);
+    if (cached) {
+      if (cached.cached && cached.error) {
+        return { success: false, servicos: [], error: cached.error };
+      }
+      log('TOOL', '✓ Serviços encontrados no cache');
+      return cached;
+    }
+
+    const result = await apiRequest(endpoint);
+
+    if (!result.success) {
+      cacheInstances.servicos.setNegative(cacheKey, result.error);
+      return { success: false, servicos: [], error: result.error };
+    }
+
+    const servicos = Array.isArray(result.data) ? result.data : [];
+
+    const response = {
+      success: true,
+      servicos,
+      total: servicos.length
+    };
+
+    cacheInstances.servicos.set(cacheKey, response, CONFIG.CACHE_TTL.LONG);
+    return response;
+
+  } catch (error) {
+    log('TOOL', 'Erro ao buscar serviços:', error.message, LogLevel.ERROR);
+    return { success: false, servicos: [], error: error.message };
+  }
+}
+
+async function listarPlanos() {
+  log('TOOL', 'listar_planos');
+  try {
+    const cacheKey = 'planos_disponiveis';
+    const cached = cacheInstances.servicos.get(cacheKey);
+    if (cached) {
+      if (cached.cached && cached.error) {
+        return { success: false, planos: [], error: cached.error };
+      }
+      log('TOOL', '✓ Planos encontrados no cache');
+      return cached;
+    }
+
+    const result = await apiRequest('/planos');
+
+    if (!result.success) {
+      cacheInstances.servicos.setNegative(cacheKey, result.error);
+      return { success: false, planos: [], error: result.error };
+    }
+
+    const planos = Array.isArray(result.data) ? result.data : [];
+
+    const response = {
+      success: true,
+      planos,
+      total: planos.length
+    };
+
+    cacheInstances.servicos.set(cacheKey, response, CONFIG.CACHE_TTL.LONG);
+    return response;
+
+  } catch (error) {
+    log('TOOL', 'Erro ao listar planos:', error.message, LogLevel.ERROR);
+    return { success: false, planos: [], error: error.message };
+  }
+}
+
+async function obterEstatisticasPet({ pet_id }) {
+  log('TOOL', 'obter_estatisticas_pet', { pet_id });
+  try {
+    if (!pet_id) throw new Error('pet_id é obrigatório');
+
+    const cacheKey = `estatisticas_pet_${pet_id}`;
+    const cached = cacheInstances.pets.get(cacheKey);
+    if (cached) {
+      if (cached.cached && cached.error) {
+        return { success: false, estatisticas: {}, error: cached.error };
+      }
+      log('TOOL', '✓ Estatísticas encontradas no cache');
+      return cached;
+    }
+
+    const result = await apiRequest(`/pets/${pet_id}/estatisticas`);
+
+    if (!result.success) {
+      cacheInstances.pets.setNegative(cacheKey, result.error);
+      return { success: false, estatisticas: {}, error: result.error };
+    }
+
+    const response = {
+      success: true,
+      estatisticas: result.data || {}
+    };
+
+    cacheInstances.pets.set(cacheKey, response, CONFIG.CACHE_TTL.SHORT);
+    return response;
+
+  } catch (error) {
+    log('TOOL', 'Erro ao obter estatísticas do pet:', error.message, LogLevel.ERROR);
+    return { success: false, estatisticas: {}, error: error.message };
+  }
+}
+
+async function workflowAgendamentoCompleto({
+  cliente_id,
+  pet_id,
+  servico_descricao,
+  veterinario_id,
+  data_hora,
+  observacoes,
+  validar_antes
+}) {
+  log('TOOL', 'workflow_agendamento_completo', { cliente_id, pet_id });
+  try {
+    if (!cliente_id) throw new Error('cliente_id é obrigatório');
+    if (!pet_id) throw new Error('pet_id é obrigatório');
+    if (!data_hora) throw new Error('data_hora é obrigatória');
+
+    const resultado = {
+      success: true,
+      etapas: {}
+    };
+
+    // Etapa 1: Buscar serviço se descrição fornecida
+    if (servico_descricao) {
+      const servicoResult = await buscarServicos({ termo_busca: servico_descricao });
+      if (!servicoResult.success || servicoResult.servicos.length === 0) {
+        return {
+          success: false,
+          etapa_falha: 'buscar_servico',
+          error: 'Serviço não encontrado. Tente outro termo de busca.'
+        };
+      }
+      resultado.etapas.servico = servicoResult.servicos[0];
+    }
+
+    // Etapa 2: Validar horário (se solicitado ou se veterinário especificado)
+    if ((validar_antes === true || veterinario_id) && veterinario_id) {
+      const validacaoResult = await validarHorarioDisponivel({
+        data_hora,
+        veterinario_id,
+        duracao_minutos: resultado.etapas.servico?.duracao_minutos || 30
+      });
+
+      resultado.etapas.validacao = validacaoResult;
+
+      if (!validacaoResult.disponivel) {
+        return {
+          success: false,
+          etapa_falha: 'validar_horario',
+          error: 'Horário não disponível',
+          validacao: validacaoResult
+        };
+      }
+    }
+
+    // Etapa 3: Criar agendamento
+    const agendamentoResult = await criarAgendamento({
+      dados: {
+        cliente_id: parseInt(cliente_id),
+        pet_id: parseInt(pet_id),
+        servico_id: resultado.etapas.servico?.id || null,
+        veterinario_id: veterinario_id ? parseInt(veterinario_id) : null,
+        data_hora,
+        tipo: resultado.etapas.servico?.tipo || 'Consulta',
+        duracao_minutos: resultado.etapas.servico?.duracao_minutos || 30,
+        valor: resultado.etapas.servico?.preco || null,
+        observacoes: observacoes || '',
+        status: 'Agendado'
+      }
+    });
+
+    if (!agendamentoResult.success) {
+      return {
+        success: false,
+        etapa_falha: 'criar_agendamento',
+        error: agendamentoResult.error
+      };
+    }
+
+    resultado.etapas.agendamento = agendamentoResult.agendamento;
+    resultado.message = '✅ Agendamento criado com sucesso!';
+
+    return resultado;
+
+  } catch (error) {
+    log('TOOL', 'Erro no workflow de agendamento:', error.message, LogLevel.ERROR);
+    return { success: false, error: error.message };
+  }
+}
+
+// ==================== FERRAMENTAS - PRODUTOS ====================
+
+async function buscarProdutos({ termo_busca, categoria, estoque_baixo }) {
+  log('TOOL', 'buscar_produtos', { termo_busca, categoria, estoque_baixo });
+  try {
+    // VALIDAÇÃO OBRIGATÓRIA: Ao menos um filtro deve ser fornecido
+    if (!termo_busca && !categoria && !estoque_baixo) {
+      return {
+        success: false,
+        produtos: [],
+        error: 'Informe ao menos um filtro: termo_busca (mínimo 3 caracteres), categoria ou estoque_baixo=true'
+      };
+    }
+
+    // Se termo_busca fornecido, validar mínimo de caracteres
+    if (termo_busca && termo_busca.trim().length < 3) {
+      return {
+        success: false,
+        produtos: [],
+        error: 'Termo de busca deve ter no mínimo 3 caracteres'
+      };
+    }
+
+    const params = [];
+    if (termo_busca) params.push(`busca=${encodeURIComponent(termo_busca.trim())}`);
+    if (categoria) params.push(`categoria=${encodeURIComponent(categoria)}`);
+    if (estoque_baixo) params.push(`estoque_baixo=1`);
+    params.push('ativo=1'); // Sempre buscar apenas produtos ativos
+
+    const endpoint = `/produtos?${params.join('&')}`;
+
+    // Cache por combinação de filtros
+    const cacheKey = `produtos_${params.join('_')}`;
+    const cached = cacheInstances.produtos.get(cacheKey);
+    if (cached) {
+      if (cached.cached && cached.error) {
+        return { success: false, produtos: [], error: cached.error };
+      }
+      log('TOOL', '✓ Produtos encontrados no cache');
+      return cached;
+    }
+
+    const result = await apiRequest(endpoint);
+
+    if (!result.success) {
+      cacheInstances.produtos.setNegative(cacheKey, result.error);
+      return { success: false, produtos: [], error: result.error };
+    }
+
+    const produtos = Array.isArray(result.data) ? result.data : [];
+
+    // Limitar a 100 resultados
+    const produtosLimitados = produtos.slice(0, 100);
+
+    const response = {
+      success: true,
+      produtos: produtosLimitados,
+      total: produtosLimitados.length,
+      limitado: produtos.length > 100
+    };
+
+    cacheInstances.produtos.set(cacheKey, response, CONFIG.CACHE_TTL.MEDIUM);
+    return response;
+
+  } catch (error) {
+    log('TOOL', 'Erro ao buscar produtos:', error.message, LogLevel.ERROR);
     return { success: false, produtos: [], error: error.message };
   }
 }
@@ -1870,23 +2553,17 @@ const toolDefinitions = [
     }
   },
   {
-    name: "listar_clientes",
-    description: "Lista clientes com filtros opcionais e paginação",
+    name: "buscar_clientes",
+    description: "Busca clientes por nome, telefone, CPF ou email. OBRIGATÓRIO informar termo de busca (mínimo 3 caracteres) para evitar retornar milhares de registros",
     inputSchema: {
       type: "object",
       properties: {
-        filtros: {
-          type: "object",
-          properties: {
-            busca: { type: "string", description: "Termo de busca (nome, CPF, telefone, email)" },
-            cidade: { type: "string", description: "Filtrar por cidade" },
-            ativo: { type: "boolean", description: "Filtrar por status ativo/inativo" },
-            com_debito: { type: "boolean", description: "Apenas clientes com débito" },
-            page: { type: "integer", description: "Página para paginação" },
-            per_page: { type: "integer", description: "Itens por página" }
-          }
+        termo_busca: {
+          type: "string",
+          description: "Termo de busca OBRIGATÓRIO: nome, telefone, CPF ou email do cliente (mínimo 3 caracteres)"
         }
-      }
+      },
+      required: ["termo_busca"]
     }
   },
   {
@@ -2095,19 +2772,22 @@ const toolDefinitions = [
   
   // Produtos
   {
-    name: "listar_produtos",
-    description: "Lista produtos do catálogo com filtros",
+    name: "buscar_produtos",
+    description: "Busca produtos por nome/código, categoria ou estoque baixo. OBRIGATÓRIO ao menos um filtro para evitar retornar centenas de produtos",
     inputSchema: {
       type: "object",
       properties: {
-        filtros: {
-          type: "object",
-          properties: {
-            busca: { type: "string", description: "Buscar por nome ou código" },
-            categoria: { type: "string", description: "Filtrar por categoria" },
-            ativo: { type: "boolean", description: "Apenas produtos ativos" },
-            estoque_baixo: { type: "boolean", description: "Apenas com estoque baixo" }
-          }
+        termo_busca: {
+          type: "string",
+          description: "Termo de busca (nome ou código do produto, mínimo 3 caracteres)"
+        },
+        categoria: {
+          type: "string",
+          description: "Filtrar por categoria específica"
+        },
+        estoque_baixo: {
+          type: "boolean",
+          description: "Se true, retorna apenas produtos com estoque abaixo do mínimo"
         }
       }
     }
@@ -2320,7 +3000,178 @@ const toolDefinitions = [
     inputSchema: { type: "object", properties: {} }
   },
   
-  // Busca e Workflow
+  // Histórico e Verificações
+  {
+    name: "obter_historico_vacinacao",
+    description: "Obtém histórico completo de vacinação de um pet",
+    inputSchema: {
+      type: "object",
+      properties: {
+        pet_id: { type: "integer", description: "ID do pet" }
+      },
+      required: ["pet_id"]
+    }
+  },
+  {
+    name: "obter_historico_clinico",
+    description: "Obtém histórico médico/clínico completo de um pet (consultas, diagnósticos, anamneses)",
+    inputSchema: {
+      type: "object",
+      properties: {
+        pet_id: { type: "integer", description: "ID do pet" }
+      },
+      required: ["pet_id"]
+    }
+  },
+  {
+    name: "obter_historico_peso",
+    description: "Obtém histórico de peso de um pet ao longo do tempo",
+    inputSchema: {
+      type: "object",
+      properties: {
+        pet_id: { type: "integer", description: "ID do pet" }
+      },
+      required: ["pet_id"]
+    }
+  },
+  {
+    name: "obter_exames_pet",
+    description: "Obtém lista de exames solicitados/realizados para um pet",
+    inputSchema: {
+      type: "object",
+      properties: {
+        pet_id: { type: "integer", description: "ID do pet" }
+      },
+      required: ["pet_id"]
+    }
+  },
+  {
+    name: "solicitar_exame",
+    description: "Solicita um novo exame para um pet",
+    inputSchema: {
+      type: "object",
+      properties: {
+        pet_id: { type: "integer", description: "ID do pet" },
+        tipo_exame_id: { type: "integer", description: "ID do tipo de exame" },
+        veterinario_id: { type: "integer", description: "ID do veterinário solicitante" },
+        observacoes: { type: "string", description: "Observações sobre o exame" }
+      },
+      required: ["pet_id", "tipo_exame_id", "veterinario_id"]
+    }
+  },
+  {
+    name: "listar_tipos_exame",
+    description: "Lista todos os tipos de exames disponíveis",
+    inputSchema: { type: "object", properties: {} }
+  },
+  {
+    name: "registrar_anamnese",
+    description: "Registra anamnese/consulta clínica para um pet",
+    inputSchema: {
+      type: "object",
+      properties: {
+        pet_id: { type: "integer", description: "ID do pet" },
+        veterinario_id: { type: "integer", description: "ID do veterinário" },
+        data_consulta: { type: "string", description: "Data da consulta (YYYY-MM-DD)" },
+        anamnese: { type: "string", description: "Descrição da anamnese" },
+        diagnostico: { type: "string", description: "Diagnóstico (opcional)" },
+        peso_atual: { type: "number", description: "Peso atual do pet em kg (opcional)" }
+      },
+      required: ["pet_id", "veterinario_id", "data_consulta", "anamnese"]
+    }
+  },
+  {
+    name: "verificar_vacinas_atrasadas",
+    description: "Verifica se o pet tem vacinas atrasadas ou próximas do vencimento",
+    inputSchema: {
+      type: "object",
+      properties: {
+        pet_id: { type: "integer", description: "ID do pet" }
+      },
+      required: ["pet_id"]
+    }
+  },
+  {
+    name: "obter_estatisticas_pet",
+    description: "Obtém estatísticas gerais de um pet (total de consultas, vacinas, exames, etc)",
+    inputSchema: {
+      type: "object",
+      properties: {
+        pet_id: { type: "integer", description: "ID do pet" }
+      },
+      required: ["pet_id"]
+    }
+  },
+
+  // Agendamentos Avançados
+  {
+    name: "validar_horario_disponivel",
+    description: "Valida se um horário está disponível para agendamento com um veterinário específico",
+    inputSchema: {
+      type: "object",
+      properties: {
+        data_hora: { type: "string", description: "Data e hora desejada (YYYY-MM-DD HH:MM:SS)" },
+        veterinario_id: { type: "integer", description: "ID do veterinário" },
+        duracao_minutos: { type: "integer", description: "Duração estimada em minutos (padrão: 30)" },
+        agendamento_id: { type: "integer", description: "ID do agendamento (se estiver remarcando)" }
+      },
+      required: ["data_hora", "veterinario_id"]
+    }
+  },
+  {
+    name: "listar_proximos_agendamentos",
+    description: "Lista próximos agendamentos futuros de um cliente",
+    inputSchema: {
+      type: "object",
+      properties: {
+        cliente_id: { type: "integer", description: "ID do cliente" },
+        limite: { type: "integer", description: "Limitar número de resultados (opcional)" }
+      },
+      required: ["cliente_id"]
+    }
+  },
+
+  // Serviços e Planos
+  {
+    name: "buscar_servicos",
+    description: "Busca serviços disponíveis por nome/descrição. OBRIGATÓRIO termo de busca",
+    inputSchema: {
+      type: "object",
+      properties: {
+        termo_busca: {
+          type: "string",
+          description: "Termo de busca (mínimo 2 caracteres): consulta, banho, vacina, etc"
+        }
+      },
+      required: ["termo_busca"]
+    }
+  },
+  {
+    name: "listar_planos",
+    description: "Lista planos de saúde/assinatura disponíveis",
+    inputSchema: { type: "object", properties: {} }
+  },
+
+  // Workflows
+  {
+    name: "workflow_agendamento_completo",
+    description: "Workflow inteligente: busca serviço, valida horário e cria agendamento em uma única operação",
+    inputSchema: {
+      type: "object",
+      properties: {
+        cliente_id: { type: "integer", description: "ID do cliente" },
+        pet_id: { type: "integer", description: "ID do pet" },
+        servico_descricao: { type: "string", description: "Descrição do serviço desejado (ex: consulta, banho)" },
+        veterinario_id: { type: "integer", description: "ID do veterinário (opcional)" },
+        data_hora: { type: "string", description: "Data e hora desejada (YYYY-MM-DD HH:MM:SS)" },
+        observacoes: { type: "string", description: "Observações (opcional)" },
+        validar_antes: { type: "boolean", description: "Se true, valida disponibilidade antes de criar (padrão: true se veterinario_id fornecido)" }
+      },
+      required: ["cliente_id", "pet_id", "data_hora"]
+    }
+  },
+
+  // Busca e Workflow Antigo
   {
     name: "busca_global",
     description: "Busca global em clientes, pets, produtos e serviços",
@@ -2371,37 +3222,80 @@ const toolDefinitions = [
 
 // Mapeamento de funções com validação
 const toolFunctions = {
+  // Clientes
   buscar_cliente_por_telefone: handleValidationErrors(buscarClientePorTelefone),
-  listar_clientes: handleValidationErrors(listarClientes),
+  buscar_clientes: handleValidationErrors(buscarClientes),
   criar_cliente: handleValidationErrors(criarCliente),
   atualizar_cliente: handleValidationErrors(atualizarCliente),
+
+  // Pets
   listar_pets_cliente: handleValidationErrors(listarPetsCliente),
   buscar_pet_por_id: handleValidationErrors(buscarPetPorId),
   criar_pet: handleValidationErrors(criarPet),
+
+  // Agendamentos
   listar_agendamentos: handleValidationErrors(listarAgendamentos),
   criar_agendamento: handleValidationErrors(criarAgendamento),
   atualizar_status_agendamento: handleValidationErrors(atualizarStatusAgendamento),
+  validar_horario_disponivel: handleValidationErrors(validarHorarioDisponivel),
+  listar_proximos_agendamentos: handleValidationErrors(listarProximosAgendamentos),
+
+  // Serviços e Recursos
   listar_servicos_ativos: handleValidationErrors(listarServicosAtivos),
+  buscar_servicos: handleValidationErrors(buscarServicos),
   listar_veterinarios: handleValidationErrors(listarVeterinarios),
+  listar_planos: handleValidationErrors(listarPlanos),
+
+  // Vacinas
   listar_vacinas_ativas: handleValidationErrors(listarVacinasAtivas),
   registrar_vacinacao: handleValidationErrors(registrarVacinacao),
-  listar_produtos: handleValidationErrors(listarProdutos),
+  obter_historico_vacinacao: handleValidationErrors(obterHistoricoVacinacao),
+  verificar_vacinas_atrasadas: handleValidationErrors(verificarVacinasAtrasadas),
+
+  // Histórico Clínico
+  obter_historico_clinico: handleValidationErrors(obterHistoricoClinico),
+  obter_historico_peso: handleValidationErrors(obterHistoricoPeso),
+  registrar_anamnese: handleValidationErrors(registrarAnamnese),
+
+  // Exames
+  obter_exames_pet: handleValidationErrors(obterExamesPet),
+  solicitar_exame: handleValidationErrors(solicitarExame),
+  listar_tipos_exame: handleValidationErrors(listarTiposExame),
+
+  // Estatísticas
+  obter_estatisticas_pet: handleValidationErrors(obterEstatisticasPet),
+
+  // Produtos
+  buscar_produtos: handleValidationErrors(buscarProdutos),
   criar_produto: handleValidationErrors(criarProduto),
+
+  // Financeiro
   listar_contas_receber: handleValidationErrors(listarContasReceber),
   criar_conta_receber: handleValidationErrors(criarContaReceber),
   registrar_pagamento: handleValidationErrors(registrarPagamento),
+
+  // Caixa
   obter_caixa_aberto: handleValidationErrors(obterCaixaAberto),
   abrir_caixa: handleValidationErrors(abrirCaixa),
   fechar_caixa: handleValidationErrors(fecharCaixa),
+
+  // Vendas
   criar_venda: handleValidationErrors(criarVenda),
+
+  // Dashboard
   obter_indicadores_dashboard: handleValidationErrors(obterIndicadoresDashboard),
   obter_insights_dashboard: handleValidationErrors(obterInsightsDashboard),
   obter_estatisticas_financeiras: handleValidationErrors(obterEstatisticasFinanceiras),
+
+  // Comissões e Alertas
   listar_comissoes: handleValidationErrors(listarComissoes),
   obter_alertas: handleValidationErrors(obterAlertas),
   obter_badge_alertas: handleValidationErrors(obterBadgeAlertas),
+
+  // Busca e Workflows
   busca_global: handleValidationErrors(buscaGlobal),
-  workflow_novo_cliente: handleValidationErrors(workflowNovoCliente)
+  workflow_novo_cliente: handleValidationErrors(workflowNovoCliente),
+  workflow_agendamento_completo: handleValidationErrors(workflowAgendamentoCompleto)
 };
 
 // ==================== MÉTRICAS ====================
@@ -2551,7 +3445,7 @@ app.get('/health', async (req, res) => {
   res.json({
     status: toolsMatch && apiStatus !== 'error' ? 'healthy' : 'unhealthy',
     service: 'vetcare-mcp',
-    version: '3.0.0',
+    version: '4.0.0',
     environment: 'production',
     api: {
       status: apiStatus,
@@ -2575,8 +3469,8 @@ app.get('/.well-known/mcp', (req, res) => {
     protocolVersion: "2024-11-05",
     serverInfo: {
       name: "vetcare-mcp",
-      version: "3.0.0",
-      description: "VetCare MCP Server - Sistema Completo de Gestão Veterinária"
+      version: "4.0.0",
+      description: "VetCare MCP Server v4.0 - Sistema Completo de Gestão Veterinária com Validação Inteligente"
     },
     capabilities: {
       tools: { listChanged: false }
@@ -2588,8 +3482,8 @@ app.get('/.well-known/mcp', (req, res) => {
 app.get('/', (req, res) => {
   res.json({
     name: 'vetcare-mcp',
-    version: '3.0.0',
-    description: 'VetCare MCP Server - Produção Final',
+    version: '4.0.0',
+    description: 'VetCare MCP Server v4.0 - Produção Otimizada',
     api_base: CONFIG.VETCARE_API_URL,
     endpoints: {
       mcp: 'POST /',
@@ -2641,10 +3535,10 @@ app.post('/', async (req, res) => {
         return res.json(formatMCPResponse(requestId, {
           protocolVersion: "2024-11-05",
           capabilities: { tools: { listChanged: false } },
-          serverInfo: { 
-            name: "vetcare-mcp", 
-            version: "3.0.0",
-            description: "VetCare MCP Server v3.0"
+          serverInfo: {
+            name: "vetcare-mcp",
+            version: "4.0.0",
+            description: "VetCare MCP Server v4.0 - Produção Otimizada"
           }
         }));
         
@@ -2754,7 +3648,7 @@ app.use((err, req, res, next) => {
 
 async function startServer() {
   try {
-    console.log('Iniciando VetCare MCP Server v3.0.0...');
+    console.log('Iniciando VetCare MCP Server v4.0.0...');
     
     // Validar ferramentas
     if (Object.keys(toolFunctions).length !== toolDefinitions.length) {
@@ -2777,22 +3671,24 @@ async function startServer() {
     
     app.listen(CONFIG.PORT, CONFIG.HOST, () => {
       console.log('');
-      console.log('🚀 VetCare MCP Server v3.0.0 - PRODUÇÃO FINAL');
+      console.log('🚀 VetCare MCP Server v4.0.0 - PRODUÇÃO OTIMIZADA');
       console.log(`🔟 Servidor local: http://${CONFIG.HOST}:${CONFIG.PORT}`);
       console.log(`🌐 Domínio: https://${CONFIG.DOMAIN}`);
       console.log(`🔗 API VetCare: ${CONFIG.VETCARE_API_URL}`);
       console.log('');
-      console.log('✨ Recursos v3.0:');
-      console.log('   ✅ 30+ ferramentas de gestão veterinária');
+      console.log('✨ Recursos v4.0:');
+      console.log('   ✅ 45+ ferramentas de gestão veterinária');
       console.log('   ✅ Sistema financeiro completo');
       console.log('   ✅ Dashboard com insights e KPIs');
       console.log('   ✅ Gestão de estoque e produtos');
       console.log('   ✅ Controle de caixa e vendas');
       console.log('   ✅ Comissões e relatórios');
-      console.log('   ✅ Validação robusta de dados');
+      console.log('   🆕 Histórico clínico completo (vacinas, peso, exames)');
+      console.log('   🆕 Verificação inteligente de vacinas atrasadas');
+      console.log('   🆕 Workflow de agendamento com validação automática');
+      console.log('   🆕 Validação OBRIGATÓRIA em buscas (proteção anti-overload)');
       console.log('   ✅ Cache inteligente multi-nível');
       console.log('   ✅ Rate limiting adaptativo');
-      console.log('   ✅ Métricas e monitoramento');
       console.log('   ✅ Suporte completo MCP 2024-11-05');
       console.log('');
       console.log('🛠 Ferramentas disponíveis: ' + toolDefinitions.length);
